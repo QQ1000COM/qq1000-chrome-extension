@@ -1285,13 +1285,17 @@ html body .qq1000-tools-row .cj-btn-shu {
     function renderPanelAdBar(ads) {
         const bar = document.querySelector(".h-00-col2");
         if (!bar) return;
-        const rows = (ads && (ads.tb_panel || ads.banner)) || [];
-        if (!Array.isArray(rows) || !rows.length) return;
-        const signature = JSON.stringify(rows.map(ad => [ad.title, ad.subtitle, ad.linkUrl, ad.updatedAt]));
+        // 只认这个位置自己的广告（tb_panel；重建前端前用 notice）。不用 banner 兜底：
+        // banner 是面板顶部横幅那一条，混进来就会出现「后台没配置也显示」。
+        // 插件自带的那几条一律摘掉：后台没配置就整条不显示。
+        const rows = (ads && (ads.tb_panel || ads.notice)) || [];
+        const list = Array.isArray(rows) ? rows.filter(ad => String(ad.title || ad.subtitle || "").trim()) : [];
+        const signature = JSON.stringify(list.map(ad => [ad.title, ad.subtitle, ad.linkUrl, ad.updatedAt]));
         if (bar.dataset.qq1000AdSignature === signature) return;
         bar.dataset.qq1000AdSignature = signature;
         bar.textContent = "";
-        rows.forEach(ad => {
+        bar.style.display = list.length ? "" : "none";
+        list.forEach(ad => {
             const label = String(ad.title || ad.subtitle || "").trim();
             if (!label) return;
             const chip = document.createElement("div");
@@ -1346,7 +1350,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         // 重建前用「公告条 notice」这个同样没被其它地方占用、后台本来就有的投放位置。
         const source = (ads && (ads.move_panel || ads.notice)) || [];
         const rows = Array.isArray(source) ? source.slice() : [];
-        if (!rows.length) return;   // 后台没配置：保持插件原来的条目
+        // 后台没配置：插件自带的这两个入口一并彻底移除（用户要求：后台没设置就不要显示）
         const assigned = [];
         MOVE_AD_SLOTS.forEach(slot => {
             const hit = rows.find(row => !assigned.includes(row) && slot.match.test(String(row.title || "")));
