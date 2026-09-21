@@ -1285,10 +1285,10 @@ html body .qq1000-tools-row .cj-btn-shu {
     function renderPanelAdBar(ads) {
         const bar = document.querySelector(".h-00-col2");
         if (!bar) return;
-        // 只认这个位置自己的广告（tb_panel；重建前端前用 notice）。不用 banner 兜底：
+        // 只认这个位置自己的广告（tb_panel，后台「投放位置」里选「淘宝面板顶栏」）。不用 banner 兜底：
         // banner 是面板顶部横幅那一条，混进来就会出现「后台没配置也显示」。
         // 插件自带的那几条一律摘掉：后台没配置就整条不显示。
-        const rows = (ads && (ads.tb_panel || ads.notice)) || [];
+        const rows = (ads && ads.tb_panel) || [];
         const list = Array.isArray(rows) ? rows.filter(ad => String(ad.title || ad.subtitle || "").trim()) : [];
         const signature = JSON.stringify(list.map(ad => [ad.title, ad.subtitle, ad.linkUrl, ad.updatedAt]));
         if (bar.dataset.qq1000AdSignature === signature) return;
@@ -1346,9 +1346,8 @@ html body .qq1000-tools-row .cj-btn-shu {
     }
 
     function applyMovePanelAds(ads) {
-        // move_panel 是后台新增的专属位置（需要重新构建前端后才会出现在下拉里）；
-        // 重建前用「公告条 notice」这个同样没被其它地方占用、后台本来就有的投放位置。
-        const source = (ads && (ads.move_panel || ads.notice)) || [];
+        // 搬家的两个入口只认 move_panel（后台选「搬家面板入口」），与顶部广告条互不串用。
+        const source = (ads && ads.move_panel) || [];
         const rows = Array.isArray(source) ? source.slice() : [];
         // 后台没配置：插件自带的这两个入口一并彻底移除（用户要求：后台没设置就不要显示）
         const assigned = [];
