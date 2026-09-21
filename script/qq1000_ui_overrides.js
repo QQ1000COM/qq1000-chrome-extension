@@ -251,6 +251,8 @@ html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .h-00-col
 html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .plugin-name-text {
     flex: 0 0 auto !important;
     min-width: 0 !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
 }
 
 /* ---------- 面板显示时机 ----------
@@ -943,7 +945,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         link.style.cssText = "text-decoration:none;display:flex;align-items:center;gap:8px;margin-left:10px;flex:0 0 auto;";
         const title = document.createElement("span");
         title.className = "plugin-name-text";
-        title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;flex:0 0 auto;color:#fff;";
+        title.style.cssText = "font-weight:600;font-size:12px;line-height:1;white-space:nowrap;flex:0 0 auto;color:#fff;";
         title.textContent = "QQ1000电商";
         link.appendChild(title);
         col1.appendChild(link);
