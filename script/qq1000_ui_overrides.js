@@ -895,11 +895,19 @@ html body .qq1000-tools-row .cj-btn-shu {
      * （常量写在这里而不是引用下面的 OFFICIAL_SITE，避免执行顺序上踩到 const 的暂时性死区。）
      */
     function ensurePanelTitle() {
-        // 顶栏左上的容器在两种形态（侧栏 / 停靠横条）里挂载点不同，逐个尝试。
-        const col1 = document.querySelector(".h-00-col1") ||
-            document.querySelector("#gg-top .h-00-col1") ||
-            document.querySelector(".cj-top .h-00-col1");
-        if (!col1) return;
+        // 顶栏行本身：标题最终一定要挂在它里面（左栏容器可能根本不存在）。
+        const row = document.querySelector("#gg-top .h-00") ||
+            document.querySelector(".cj-top .h-00") ||
+            document.querySelector(".h-00");
+        if (!row) return;
+        // 左栏容器没有就自己补一个（占位用），有就复用。
+        let col1 = row.querySelector(".h-00-col1");
+        if (!col1) {
+            col1 = document.createElement("div");
+            col1.className = "h-00-col1";
+            col1.style.cssText = "flex:0 0 auto;display:flex;align-items:center;gap:8px;margin-left:10px;";
+            row.insertBefore(col1, row.firstChild);
+        }
         // 标题一律用扩展本地的品牌名，不依赖在线配置（在线配置没回来时插件整块不渲染）。
         const existing = col1.querySelector(".plugin-name-text");
         if (existing) {
@@ -913,13 +921,13 @@ html body .qq1000-tools-row .cj-btn-shu {
         link.style.cssText = "text-decoration:none;display:flex;align-items:center;gap:8px;margin-left:10px;flex:0 0 auto;";
         const title = document.createElement("span");
         title.className = "plugin-name-text";
-        title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;flex:0 0 auto;";
+        title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;flex:0 0 auto;color:#fff;";
         title.textContent = "QQ1000电商";
         link.appendChild(title);
         // 标签里已经有网址（插件自己渲染的）时就不再补一遍，避免重复。
         if (!normalizeText(col1.textContent).includes("tu.qq1000.com")) {
             const url = document.createElement("span");
-            url.style.cssText = "font-size:12px;white-space:nowrap;flex:0 0 auto;";
+            url.style.cssText = "font-size:12px;white-space:nowrap;flex:0 0 auto;color:rgba(255,255,255,0.85);";
             url.textContent = "tu.qq1000.com";
             link.appendChild(url);
         }
@@ -1615,9 +1623,9 @@ html body .qq1000-tools-row .cj-btn-shu {
     observer.observe(document.documentElement, { childList: true, subtree: true });
     setInterval(() => {
         try {
+            ensurePanelTitle();   // 放最前：即使下面的清理抛错，标题也一定被补上
             applyRemovals();
             applyMovePanelAds(lastAdsByPlacement);
-            ensurePanelTitle();   // 顶栏标题兜底：面板重渲染后也保证还在
         } catch (error) {
         }
     }, 5000);
