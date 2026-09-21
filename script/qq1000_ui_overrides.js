@@ -881,9 +881,10 @@ html body .qq1000-tools-row .cj-btn-shu {
      * （常量写在这里而不是引用下面的 OFFICIAL_SITE，避免执行顺序上踩到 const 的暂时性死区。）
      */
     function ensurePanelTitle() {
-        const header = document.querySelector(".cj-top .h-00") || document.querySelector(".h-00");
-        if (!header) return;
-        const col1 = header.querySelector(".h-00-col1");
+        // 顶栏左上的容器在两种形态（侧栏 / 停靠横条）里挂载点不同，逐个尝试。
+        const col1 = document.querySelector(".h-00-col1") ||
+            document.querySelector("#gg-top .h-00-col1") ||
+            document.querySelector(".cj-top .h-00-col1");
         if (!col1) return;
         const existing = col1.querySelector(".plugin-name-text");
         if (existing) {
@@ -1599,6 +1600,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         try {
             applyRemovals();
             applyMovePanelAds(lastAdsByPlacement);
+            ensurePanelTitle();   // 顶栏标题兜底：面板重渲染后也保证还在
         } catch (error) {
         }
     }, 5000);
