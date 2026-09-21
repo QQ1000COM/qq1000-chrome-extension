@@ -916,7 +916,21 @@ html body .qq1000-tools-row .cj-btn-shu {
      * 说明：这三步各自只扫一遍、范围很小，合并成一次遍历收益有限、却容易改出行为差异，
      * 所以这里只统一入口与顺序，避免散落在多处调用导致漏调/重复调。
      */
+    // 插件在若干按钮上挂「NEW」角标（绝对定位）。按钮被归类搬走后角标会留在原位，
+    // 就成了飘在别处的红色小方块；这些角标没有信息量，直接移除。
+    function purgeNewBadges() {
+        toolRoots().forEach(root => {
+            root.querySelectorAll('[class*="new"], [class*="New"], [class*="badge"], [class*="Badge"], .el-badge__content').forEach(node => {
+                if (!node.parentElement) return;
+                const text = normalizeText(directTextOf(node)).toUpperCase();
+                if (text !== "NEW" && text !== "HOT") return;
+                removeNode(node);
+            });
+        });
+    }
+
     function applyRemovals() {
+        purgeNewBadges();
         purgeRemovedNodes();
         const now = Date.now();
         if (now - lastAnywherePurgeAt > 10000) {
