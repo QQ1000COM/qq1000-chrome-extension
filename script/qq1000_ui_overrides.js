@@ -1666,7 +1666,8 @@ html body .qq1000-tools-row .cj-btn-shu {
         window.__QQ1000_TAB_PURGE__ = true;
         var REMOVE = ["商品库"];
         function purge() {
-            var nodes = document.querySelectorAll(".el-tabs__item, [role=\"tab\"]");
+            // 选品库弹窗的 Tab 不是标准 el-tabs，按「Tab 特征类名 + 文案精确匹配」来找。
+            var nodes = document.querySelectorAll(".el-tabs__item, [role=\"tab\"], [class*=\"tab\"], [class*=\"Tab\"]");
             Array.prototype.forEach.call(nodes, function (node) {
                 var text = String(node.textContent || "").trim();
                 if (REMOVE.indexOf(text) === -1) return;
