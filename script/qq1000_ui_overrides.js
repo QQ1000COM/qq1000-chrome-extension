@@ -240,7 +240,13 @@ html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .h-00-col
     min-width: 0 !important;
     display: flex !important;
     align-items: center !important;
+    align-self: center !important;
+    height: 100% !important;
     gap: 8px !important;
+}
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .h-00-col1 > a {
+    align-self: center !important;
+    line-height: 1 !important;
 }
 html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .plugin-name-text {
     flex: 0 0 auto !important;
@@ -916,6 +922,14 @@ html body .qq1000-tools-row .cj-btn-shu {
             col1.style.cssText = "flex:0 0 auto;display:flex;align-items:center;gap:8px;margin-left:10px;";
             row.insertBefore(col1, row.firstChild);
         }
+        // 顶栏只留插件标题，不显示网址：插件自己渲染的那条 URL 链接一并摘掉。
+        col1.querySelectorAll("a, div, span").forEach(node => {
+            const text = normalizeText(directTextOf(node) || node.textContent);
+            if (/^https?:\/\//i.test(text)) {
+                const urlLink = node.closest("a") || node;
+                if (urlLink && urlLink !== col1 && !urlLink.querySelector(".plugin-name-text")) removeNode(urlLink);
+            }
+        });
         // 标题一律用扩展本地的品牌名，不依赖在线配置（在线配置没回来时插件整块不渲染）。
         const existing = col1.querySelector(".plugin-name-text");
         if (existing) {
@@ -932,13 +946,6 @@ html body .qq1000-tools-row .cj-btn-shu {
         title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;flex:0 0 auto;color:#fff;";
         title.textContent = "QQ1000电商";
         link.appendChild(title);
-        // 标签里已经有网址（插件自己渲染的）时就不再补一遍，避免重复。
-        if (!normalizeText(col1.textContent).includes("tu.qq1000.com")) {
-            const url = document.createElement("span");
-            url.style.cssText = "font-size:12px;white-space:nowrap;flex:0 0 auto;color:rgba(255,255,255,0.85);";
-            url.textContent = "tu.qq1000.com";
-            link.appendChild(url);
-        }
         col1.appendChild(link);
     }
 
