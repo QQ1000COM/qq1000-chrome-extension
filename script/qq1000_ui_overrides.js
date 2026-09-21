@@ -233,6 +233,20 @@ html body .pool-ai-intro-banner {
     display: none !important;
 }
 
+/* 顶栏左边那栏（标题/网址）不能被广告栏挤成 0 宽：
+   插件顶栏是 flex 行，广告栏内容一多就把这一栏压没了。 */
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .h-00-col1 {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .plugin-name-text {
+    flex: 0 0 auto !important;
+    min-width: 0 !important;
+}
+
 /* ---------- 面板显示时机 ----------
    不采用「先让插件自己排一遍、再重新排」的做法 —— 那样一定会闪。
    这里从第一帧起就不显示插件原来的工具按钮，只显示脚本重写出来的分组布局：
@@ -896,16 +910,16 @@ html body .qq1000-tools-row .cj-btn-shu {
         link.href = "https://tu.qq1000.com";
         link.target = "_blank";
         link.setAttribute("rel", "noreferrer");
-        link.style.cssText = "text-decoration:none;display:flex;align-items:center;gap:8px;margin-left:10px;";
+        link.style.cssText = "text-decoration:none;display:flex;align-items:center;gap:8px;margin-left:10px;flex:0 0 auto;";
         const title = document.createElement("span");
         title.className = "plugin-name-text";
-        title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;";
+        title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;flex:0 0 auto;";
         title.textContent = "QQ1000电商";
         link.appendChild(title);
         // 标签里已经有网址（插件自己渲染的）时就不再补一遍，避免重复。
         if (!normalizeText(col1.textContent).includes("tu.qq1000.com")) {
             const url = document.createElement("span");
-            url.style.cssText = "font-size:12px;white-space:nowrap;";
+            url.style.cssText = "font-size:12px;white-space:nowrap;flex:0 0 auto;";
             url.textContent = "tu.qq1000.com";
             link.appendChild(url);
         }
