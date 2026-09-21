@@ -895,10 +895,18 @@ html body .qq1000-tools-row .cj-btn-shu {
      * （常量写在这里而不是引用下面的 OFFICIAL_SITE，避免执行顺序上踩到 const 的暂时性死区。）
      */
     function ensurePanelTitle() {
-        // 顶栏行本身：标题最终一定要挂在它里面（左栏容器可能根本不存在）。
-        const row = document.querySelector("#gg-top .h-00") ||
-            document.querySelector(".cj-top .h-00") ||
-            document.querySelector(".h-00");
+        // 顶栏行本身：标题要挂在**可见的那个** .h-00 里。
+        // 页面上别处（隐藏模板 / 弹窗残留）也可能有 .h-00，
+        // 直接 querySelector 取第一个会把标题插到看不见的地方。
+        const visible = element => {
+            if (!element || !element.isConnected) return false;
+            const rect = element.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+        };
+        const candidates = Array.from(document.querySelectorAll(".h-00"));
+        const preferred = candidates.filter(node =>
+            node.closest("#gg-top, .cj-top-bg, .cj-top, [class*='panel']"));
+        const row = preferred.find(visible) || candidates.find(visible);
         if (!row) return;
         // 左栏容器没有就自己补一个（占位用），有就复用。
         let col1 = row.querySelector(".h-00-col1");
