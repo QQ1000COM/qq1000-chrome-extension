@@ -1,4 +1,4 @@
-<?xml version='5.78' encoding='UTF-8'?>
+<?xml version='5.79' encoding='UTF-8'?>
 <!--
   Chrome 自托管更新清单（self-hosted update manifest）。
   发布流程会随 manifest.json 的版本号自动更新这里的 version 字段。
@@ -10,6 +10,6 @@
 -->
 <gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
   <app appid='qq1000-chrome-extension'>
-    <updatecheck codebase='https://github.com/QQ1000COM/qq1000-chrome-extension/releases/latest/download/qq1000-chrome-extension.crx' version='5.78'/>
+    <updatecheck codebase='https://github.com/QQ1000COM/qq1000-chrome-extension/releases/latest/download/qq1000-chrome-extension.crx' version='5.79'/>
   </app>
 </gupdate>
