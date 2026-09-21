@@ -47,6 +47,7 @@
     let adConfig = { ...DEFAULT_AD };
     let applyTimer = null;
     // 门户配置（品牌 + 广告位）的刷新状态：后台改完要尽快反映到插件。
+    let lastAnywherePurgeAt = 0;
     let portalFetchedAt = 0;
     let portalSignature = "";
     let portalInflight = null;
@@ -504,6 +505,12 @@ html body .qq1000-tools-row .cj-btn-shu {
         return node;
     }
 
+    // 只处理顶栏工具区里的按钮：面板还有「可拖拽浮动面板」这种形态，
+    // 里面是采集入口/下载工具这类菜单，不能被分类逻辑搬走、也不能被清理规则删掉。
+    function inToolbarRegion(element) {
+        return !!(element.closest && (element.closest(".h-00") || element.closest(".cj-top-bg")));
+    }
+
     function collectToolButtons() {
         // 同一个工具名在面板里可能出现多次（不同组件各渲染一处），必须全部收走：
         // 只搬第一处的话，剩下的会孤零零留在原行里，看着就是错位。
@@ -514,6 +521,7 @@ html body .qq1000-tools-row .cj-btn-shu {
                 root.querySelectorAll("." + className).forEach(button => {
                     if (seen.has(button)) return;
                     if (button.closest("[" + TOOLS_ATTR + "]")) return;
+                    if (!inToolbarRegion(button)) return;
                     const label = toolLabelOf(button);
                     if (!label || label.length > 14) return;
                     seen.add(button);
@@ -660,8 +668,14 @@ html body .qq1000-tools-row .cj-btn-shu {
             grouped = buildToolGroups() === true;
         } catch (error) {
         }
-        // 只有真的分好组才显示面板；按钮还没渲染出来就等下一轮 DOM 变动。
-        if (grouped) markPanelsReady();
+        if (grouped) {
+            markPanelsReady();
+            return;
+        }
+        // 分组没成功（比如这个面板里压根没有可分类的工具按钮，或者按钮还没渲染出来）
+        // 也必须把面板显示出来 —— 否则它会一直停在「不可见」状态，看起来就是面板消失了。
+        // 给一个很短的延迟，兼顾「按钮稍后才到」的情况。
+        setTimeout(markPanelsReady, 250);
     }
 
     // 「商品信息」那些统计格 + 指定的工具按钮，彻底移除。
@@ -670,25 +684,72 @@ html body .qq1000-tools-row .cj-btn-shu {
     // 所以这些节点一次都不会被画出来。
     const REMOVED_STAT_LABELS = ["类目：", "SKU数：", "已售：", "销售额约：", "收藏：", "评价：",
         "问大家：", "月销量：", "月付款：", "月收货：", "点击查询"];
+    // 按文字内容匹配，不依赖容器类名 —— 面板在侧栏形态和横条形态下用的类名不一样，
+    // 之前只查 .jc-top-view-text，结果横条形态一个都没匹配到。
+    // 冒号全角半角都认；「收藏店铺」这种没有冒号的不会误伤。
+    const REMOVED_STAT_PATTERN = /^(类目|SKU数|已售|销售额约|收藏|评价|问大家|月销量|月付款|月收货)\s*[:：]/;
     const REMOVED_TOOL_LABELS = ["宝贝卡首屏", "利润计算", "生成网页二维码"];
     const TOOL_NODE_SELECTOR = ".jc-top-view-text, .jc-top-btn-text, .jc-top-btn-primary, .cj-btn-zh-bgfff";
 
-    function purgeRemovedNodes() {
-        toolRoots().forEach(root => {
-            root.querySelectorAll(".jc-top-view-text").forEach(cell => {
-                const label = normalizeText(cell.textContent);
-                if (!label) {
-                    // 空壳格子（图标字形没渲染出来的那种）直接摘掉
-                    removeNode(cell);
-                    return;
-                }
-                if (label.length > 40) return;
-                if (REMOVED_STAT_LABELS.some(item => label === item || label.startsWith(item))) removeNode(cell);
+    function matchesRemovedStat(text) {
+        if (!text) return false;
+        if (REMOVED_STAT_PATTERN.test(text)) return true;
+        return text === "点击查询";
+    }
+
+    // 标签是格子 <span> 里的**直接文本节点**（后面紧跟一个装图标/数值的 <span>），
+    // 所以必须看元素自身的直接文本，而不是 textContent（后者会被子元素影响）。
+    function directTextOf(element) {
+        let text = "";
+        Array.from(element.childNodes || []).forEach(child => {
+            if (child.nodeType === 3) text += child.nodeValue;
+        });
+        return normalizeText(text);
+    }
+
+    // 整块内容是否「除了要移除的标签之外没有别的中文」：
+    // 用来判断往外走的那一层还是不是一个纯统计块（避免连带删掉旁边的功能按钮）。
+    const STAT_LABEL_WORDS = /(类目|SKU数|已售|销售额约|收藏|评价|问大家|月销量|月付款|月收货|点击查询)/g;
+    function statBlockOnly(text) {
+        if (!matchesRemovedStat(text)) return false;
+        const rest = String(text).replace(STAT_LABEL_WORDS, "");
+        return !/[\u4e00-\u9fff]/.test(rest);
+    }
+
+    // 从命中的标签往外找到最大的「纯统计块」：整块文本去掉已知标签后没有其它中文。
+    // 这样无论插件用什么类名包这些格子，都能整块移除，而不会连带删掉工具按钮。
+    function statCellOf(node, root) {
+        let target = node;
+        let current = node.parentElement;
+        let depth = 0;
+        while (current && current !== root && depth < 4) {
+            const text = normalizeText(current.textContent);
+            if (!text || text.length > 300) break;
+            if (!statBlockOnly(text)) break;
+            if (current.querySelector("." + TOOL_BUTTON_CLASSES.join(", ."))) break;
+            target = current;
+            current = current.parentElement;
+            depth += 1;
+        }
+        return target;
+    }
+
+    // scope：只在这个子树里找（DOM 变动回调里传新增节点，避免每次变动都全量扫面板）。
+    function purgeRemovedNodes(scope) {
+        const roots = scope ? [scope] : toolRoots();
+        roots.forEach(root => {
+            if (!root || typeof root.querySelectorAll !== "function") return;
+            // 统计格：按元素自身的直接文本定位（类名、子元素都不可靠）
+            root.querySelectorAll("div, span, p, td, li").forEach(node => {
+                if (!node.parentElement || node.closest("[" + TOOLS_ATTR + "]")) return;
+                if (!matchesRemovedStat(directTextOf(node))) return;
+                removeNode(statCellOf(node, root));
             });
             // 没有任何文字的按钮壳：插件的图标字体/占位图没渲染出来时，页面上就是一块空白色块，
             // 留着只会让人以为是坏掉的图标，这里直接移除（有文字的按钮不受影响）。
             TOOL_BUTTON_CLASSES.forEach(className => {
                 root.querySelectorAll("." + className).forEach(button => {
+                    if (!inToolbarRegion(button)) return;
                     const label = toolLabelOf(button);
                     if (!label) {
                         removeNode(toolMoveTarget(button));
@@ -702,13 +763,39 @@ html body .qq1000-tools-row .cj-btn-shu {
         });
     }
 
-    // 只有这次 DOM 变动真的碰到了相关节点才去扫描，避免高频回调下反复全量查询
+    // 只有这次 DOM 变动真的碰到了面板自己的节点才去扫描，避免高频回调下反复全量查询。
+    // 插件类名前缀也认：统计格的类名和工具按钮不同，只按按钮类判会漏掉它们。
     function mutationTouchesTools(mutations) {
+        const pluginNode = /^(cj-|jc-|gg-|h-00|qq1000-)/;
         return mutations.some(mutation => Array.from(mutation.addedNodes || []).some(node => {
             if (!node || node.nodeType !== 1) return false;
             if (node.matches && node.matches(TOOL_NODE_SELECTOR)) return true;
+            if (pluginNode.test(String(node.className || ""))) return true;
             return !!(node.querySelector && node.querySelector(TOOL_NODE_SELECTOR));
         }));
+    }
+
+    // 兜底：两种形态下面板容器的 id / 类名不一样，万一上面的范围没覆盖到，
+    // 就在全文档里按「插件自己的类名前缀 + 文案匹配」再扫一遍。
+    // 只在节流过的常规整理路径里跑，避免高频回调下全量扫描拖慢页面。
+    function purgeStatLabelsAnywhere() {
+        const pluginOwned = /^(cj-|jc-|gg-|qq1000-|h-00|plugin-name)/;
+        document.querySelectorAll("div, span").forEach(node => {
+            if (!node.parentElement) return;
+            if (!matchesRemovedStat(directTextOf(node))) return;
+            let cursor = node;
+            let owned = false;
+            let depth = 0;
+            while (cursor && depth < 4) {
+                if (pluginOwned.test(String(cursor.className || ""))) {
+                    owned = true;
+                    break;
+                }
+                cursor = cursor.parentElement;
+                depth += 1;
+            }
+            if (owned) removeNode(statCellOf(node, document.body));
+        });
     }
 
     function removeFeaturesByLabel() {
@@ -778,9 +865,51 @@ html body .qq1000-tools-row .cj-btn-shu {
         });
     }
 
+    /**
+     * 顶栏左上角必须显示「插件标题 + 官网地址」。
+     * 插件那边这块写的是 `agentUrl ? <a>标题</a> : 什么都不渲染`，只要配置还没回来、
+     * agentUrl 一时为空（或标题字段为空），标题就整块消失。
+     * 这里做兜底补齐：已经是空的标题补文案，整块没渲染就自己补一个。
+     * （常量写在这里而不是引用下面的 OFFICIAL_SITE，避免执行顺序上踩到 const 的暂时性死区。）
+     */
+    function ensurePanelTitle() {
+        const header = document.querySelector(".cj-top .h-00") || document.querySelector(".h-00");
+        if (!header) return;
+        const col1 = header.querySelector(".h-00-col1");
+        if (!col1) return;
+        const existing = col1.querySelector(".plugin-name-text");
+        if (existing) {
+            if (!normalizeText(existing.textContent)) existing.textContent = "QQ1000电商";
+            return;
+        }
+        if (normalizeText(col1.textContent)) return;
+        const link = document.createElement("a");
+        link.href = "https://tu.qq1000.com";
+        link.target = "_blank";
+        link.setAttribute("rel", "noreferrer");
+        link.style.cssText = "text-decoration:none;display:flex;align-items:center;gap:8px;margin-left:10px;";
+        const title = document.createElement("span");
+        title.className = "plugin-name-text";
+        title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;";
+        title.textContent = "QQ1000电商";
+        const url = document.createElement("span");
+        url.style.cssText = "font-size:12px;white-space:nowrap;";
+        url.textContent = "tu.qq1000.com";
+        link.appendChild(title);
+        link.appendChild(url);
+        col1.appendChild(link);
+    }
+
     function removeUnwantedPluginUi(panel) {
         if (panel) removePanelMenuEntries(panel);
+        ensurePanelTitle();
         purgeRemovedNodes();
+        // 全文档兜底扫描很重（大页面上万节点），10 秒最多跑一次
+        const now = Date.now();
+        if (now - lastAnywherePurgeAt > 10000) {
+            lastAnywherePurgeAt = now;
+            purgeStatLabelsAnywhere();
+        }
         removeFeaturesByLabel();
         buildToolGroups();
         // 顶部广告栏（.h-00-col2 / #gg-top，内容 资源推荐、1元礼品代发、真实快递代发、
@@ -847,10 +976,12 @@ html body .qq1000-tools-row .cj-btn-shu {
     // 插件顶栏标题的兜底值（正常应由 tools/config/new2025 的 pluginName 下发）。
     const PLUGIN_BRAND_NAME = "QQ1000电商";
     // 用户中心里要下线的 Tab（按文案匹配，避免企业子账号被 visibleTabs 过滤后序号错位）。
-    const HIDDEN_TAB_LABELS = ["会员订购", "功能导航"];
+    // 「功能导航」**不能删**：那里面是打开商品搬家 / 淘宝详情分析 / 生意参谋助手 /
+    // 直通车助手这些功能面板的入口卡片，删掉 Tab 就等于把这些功能整个藏起来。
+    const HIDDEN_TAB_LABELS = ["会员订购"];
 
     /**
-     * 「会员订购」「功能导航」两个 Tab **直接从 DOM 移除**（不是 display:none 隐藏）。
+     * 把要下线的 Tab **直接从 DOM 移除**（不是 display:none 隐藏）。
      * 面板由 v-if 控制，Tab 按钮没了就永远进不去，里面的内容自然也不会出现。
      * 按文案匹配而不是按 :nth-child —— 企业子账号会被 visibleTabs 过滤掉 membership，
      * 序号整体前移，按序号删会误伤「更新记录」。
@@ -1268,7 +1399,13 @@ html body .qq1000-tools-row .cj-btn-shu {
         // 统计格与指定工具按钮也在这一瞬间摘掉（Vue 重渲染后会再次触发这里补摘）。
         if (mutationTouchesTools(mutations)) {
             try {
-                purgeRemovedNodes();
+                // 只扫「这次新增的那几棵子树」，不做面板全量查询：
+                // 之前每次变动都全量扫，页面元素多的时候会把主线程拖住。
+                mutations.forEach(mutation => {
+                    Array.from(mutation.addedNodes || []).forEach(node => {
+                        if (node && node.nodeType === 1) purgeRemovedNodes(node);
+                    });
+                });
             } catch (error) {
             }
         }
