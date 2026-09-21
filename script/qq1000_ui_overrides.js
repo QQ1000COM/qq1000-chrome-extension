@@ -886,12 +886,12 @@ html body .qq1000-tools-row .cj-btn-shu {
             document.querySelector("#gg-top .h-00-col1") ||
             document.querySelector(".cj-top .h-00-col1");
         if (!col1) return;
+        // 标题一律用扩展本地的品牌名，不依赖在线配置（在线配置没回来时插件整块不渲染）。
         const existing = col1.querySelector(".plugin-name-text");
         if (existing) {
-            if (!normalizeText(existing.textContent)) existing.textContent = "QQ1000电商";
+            if (normalizeText(existing.textContent) !== "QQ1000电商") existing.textContent = "QQ1000电商";
             return;
         }
-        if (normalizeText(col1.textContent)) return;
         const link = document.createElement("a");
         link.href = "https://tu.qq1000.com";
         link.target = "_blank";
@@ -901,11 +901,14 @@ html body .qq1000-tools-row .cj-btn-shu {
         title.className = "plugin-name-text";
         title.style.cssText = "font-weight:600;font-size:14px;white-space:nowrap;";
         title.textContent = "QQ1000电商";
-        const url = document.createElement("span");
-        url.style.cssText = "font-size:12px;white-space:nowrap;";
-        url.textContent = "tu.qq1000.com";
         link.appendChild(title);
-        link.appendChild(url);
+        // 标签里已经有网址（插件自己渲染的）时就不再补一遍，避免重复。
+        if (!normalizeText(col1.textContent).includes("tu.qq1000.com")) {
+            const url = document.createElement("span");
+            url.style.cssText = "font-size:12px;white-space:nowrap;";
+            url.textContent = "tu.qq1000.com";
+            link.appendChild(url);
+        }
         col1.appendChild(link);
     }
 
