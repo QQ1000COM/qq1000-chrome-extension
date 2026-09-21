@@ -929,8 +929,23 @@ html body .qq1000-tools-row .cj-btn-shu {
         });
     }
 
+    // 插件内置的顶部广告条目与后台配置无关：一律先清掉（不依赖是否登录、是否抓到配置），
+    // 后台配置的广告由 renderPanelAdBar 渲染并带 data-qq1000-ad-rendered 标记，不会被误清。
+    function stripBuiltinAdBar() {
+        document.querySelectorAll(".h-00-col2-text.gg-text-xhx").forEach(node => {
+            if (node.closest("[data-qq1000-ad-rendered]")) return;
+            removeNode(node);
+        });
+        const bar = document.querySelector(".h-00-col2");
+        if (!bar) return;
+        if (bar.querySelector(".h-00-col2-text.gg-text-xhx")) return;
+        if (normalizeText(bar.textContent)) return;
+        bar.style.display = "none";   // 没有内容就别留一条空白蓝条
+    }
+
     function applyRemovals() {
         purgeNewBadges();
+        stripBuiltinAdBar();
         purgeRemovedNodes();
         const now = Date.now();
         if (now - lastAnywherePurgeAt > 10000) {
@@ -1314,6 +1329,7 @@ html body .qq1000-tools-row .cj-btn-shu {
             if (!label) return;
             const chip = document.createElement("div");
             chip.className = "h-00-col2-text gg-text-xhx";
+            chip.setAttribute("data-qq1000-ad-rendered", "1");
             chip.textContent = label;
             const url = String(ad.linkUrl || "").trim();
             if (url) {
@@ -1378,7 +1394,18 @@ html body .qq1000-tools-row .cj-btn-shu {
             const node = directLabelNode(slot.label);
             if (!node) return;
             if (!slot.ad) {
-                removeNode(node.closest("li") || node);
+                // 摘「整行」：图标与文字在同一行里，只删文字会留下孤零零的图标。
+                // 向上走，只要祖先的文本仍等于这个标签（图标不带文字），就再往上一层。
+                let row = node;
+                let up = node.parentElement;
+                let guard = 0;
+                while (up && guard < 3) {
+                    if (normalizeText(up.textContent) !== slot.label) break;
+                    row = up;
+                    up = up.parentElement;
+                    guard += 1;
+                }
+                removeNode(row);
                 return;
             }
             const title = String(slot.ad.title || "").trim();
