@@ -239,10 +239,10 @@ html body .pool-ai-intro-banner {
    注意：面板停靠成横条时根容器是 #gg-top，不是 #cj-goods-side-panel-root，
    所以按钮的隐藏规则**不加容器前缀**，两种形态都覆盖到。
    兜底：脚本里设了 1.5 秒超时，届时无论如何都会撤掉这套隐藏规则。 */
-html[data-qq1000-tools-pending] .jc-top-btn-text:not(.qq1000-moved),
-html[data-qq1000-tools-pending] .jc-top-btn-primary:not(.qq1000-moved),
-html[data-qq1000-tools-pending] .cj-btn-zh-bgfff:not(.qq1000-moved),
-html[data-qq1000-tools-pending] .cj-btn-shu {
+html[data-qq1000-tools-pending] :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .jc-top-btn-text:not(.qq1000-moved),
+html[data-qq1000-tools-pending] :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .jc-top-btn-primary:not(.qq1000-moved),
+html[data-qq1000-tools-pending] :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .cj-btn-zh-bgfff:not(.qq1000-moved),
+html[data-qq1000-tools-pending] :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .cj-btn-shu {
     display: none !important;
 }
 html body #cj-goods-side-panel-root:not(.qq1000-ready),
@@ -265,16 +265,16 @@ html body .kd-dialog-site-name {
    结果插件原本的白字压到浅底上，整片看不清。
    插件把竖线分隔符设成 flex:1;max-width:30px，会吃掉行内空间把按钮推开；
    按钮又是 margin:0 auto 各自居中，间距才忽宽忽窄。 */
-html body .cj-btn-shu {
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .cj-btn-shu {
     flex: 0 0 auto !important;
     min-width: 0 !important;
     max-width: none !important;
     margin: 0 6px !important;
 }
-html body .jc-top-btn-text,
-html body .jc-top-btn-primary,
-html body .cj-btn-zh-bgfff,
-html body .jc-top-view-text {
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .jc-top-btn-text,
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .jc-top-btn-primary,
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .cj-btn-zh-bgfff,
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .jc-top-view-text {
     flex: 0 0 auto !important;
     margin: 0 !important;
     white-space: nowrap !important;
@@ -462,7 +462,12 @@ html body .qq1000-tools-row .cj-btn-shu {
         return normalizeText(element.textContent).replace(/[▾▴▼▲\s]+$/g, "");
     }
 
+    // 面板根节点在一次整理里会被反复用到（分组、清理、兜底），而每次都要查若干次 DOM。
+    // 100ms 内复用同一份结果：既避免同一帧重复查询，也不会因为缓存太久而读到已被移除的节点。
+    let toolRootsCache = { at: 0, roots: [] };
     function toolRoots() {
+        const now = Date.now();
+        if (now - toolRootsCache.at < 100 && toolRootsCache.roots.length) return toolRootsCache.roots;
         const roots = [];
         const panel = document.getElementById(PANEL_ID);
         if (panel) roots.push(panel);
@@ -473,6 +478,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         [".cj-top-bg", ".cj-top"].forEach(selector => {
             document.querySelectorAll(selector).forEach(node => roots.push(node));
         });
+        toolRootsCache = { at: now, roots: roots };
         return roots;
     }
 
@@ -900,17 +906,28 @@ html body .qq1000-tools-row .cj-btn-shu {
         col1.appendChild(link);
     }
 
-    function removeUnwantedPluginUi(panel) {
-        if (panel) removePanelMenuEntries(panel);
-        ensurePanelTitle();
+    /**
+     * 所有「下线/清理」规则的唯一入口，顺序固定：
+     *   1. purgeRemovedNodes —— 面板范围内的统计格、空壳按钮、指定工具按钮
+     *   2. purgeStatLabelsAnywhere —— 全文档兜底（类名前缀归属插件才算），10 秒最多一次
+     *   3. removeFeaturesByLabel —— 指定功能及其子功能行
+     * 说明：这三步各自只扫一遍、范围很小，合并成一次遍历收益有限、却容易改出行为差异，
+     * 所以这里只统一入口与顺序，避免散落在多处调用导致漏调/重复调。
+     */
+    function applyRemovals() {
         purgeRemovedNodes();
-        // 全文档兜底扫描很重（大页面上万节点），10 秒最多跑一次
         const now = Date.now();
         if (now - lastAnywherePurgeAt > 10000) {
             lastAnywherePurgeAt = now;
             purgeStatLabelsAnywhere();
         }
         removeFeaturesByLabel();
+    }
+
+    function removeUnwantedPluginUi(panel) {
+        if (panel) removePanelMenuEntries(panel);
+        ensurePanelTitle();
+        applyRemovals();
         buildToolGroups();
         // 顶部广告栏（.h-00-col2 / #gg-top，内容 资源推荐、1元礼品代发、真实快递代发、
         // 查降权旺旺号…）由后台配置，用户要求在面板上原样展示，这里不再整栏移除。
@@ -1037,10 +1054,13 @@ html body .qq1000-tools-row .cj-btn-shu {
      * （`cj_app_config_2025`）里，缓存 30 分钟，兜底值还是 "1.com" / 空字符串。
      * 这里纠正成本站域名，并把标题与 logo 补齐 —— 不用等缓存过期就能生效。
      */
+    // 上次写回缓存的内容：整理流程每 800ms 跑一次，加个签名短路，
+    // 没变化就不再解析/序列化那一大坨 JSON。
+    let lastAppConfigSignature = "";
     function patchAppConfigCache() {
         try {
             const raw = window.localStorage.getItem("cj_app_config_2025");
-            if (!raw) return;
+            if (!raw || raw === lastAppConfigSignature) return;
             const parsed = JSON.parse(raw);
             const envelope = parsed && parsed.data;
             if (!envelope || typeof envelope !== "object") return;
@@ -1062,7 +1082,14 @@ html body .qq1000-tools-row .cj-btn-shu {
                 if (!String(payload.titleName || "").trim()) payload.titleName = PLUGIN_BRAND_NAME;
                 touched = true;
             }
-            if (touched) window.localStorage.setItem("cj_app_config_2025", JSON.stringify(parsed));
+            if (touched) {
+                const next = JSON.stringify(parsed);
+                lastAppConfigSignature = next;
+                window.localStorage.setItem("cj_app_config_2025", next);
+            } else {
+                // 内容本来就合规：记下签名，下次直接跳过解析
+                lastAppConfigSignature = raw;
+            }
         } catch (error) {}
     }
 
@@ -1443,5 +1470,14 @@ html body .qq1000-tools-row .cj-btn-shu {
         });
         if (changedInsidePanel) scheduleApply();
     });
-    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    // 性能：不监听 characterData —— 页面每次文字变化都会触发回调，重页面上量非常大，
+    // 而我们的规则只需要「节点增删」。代价是「只有文字变化、没有节点增删」的更新不再触发整理，
+    // 所以补一个 5 秒一次的低频兜底：只扫面板范围（几十个节点），把该清的再清一遍。
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    setInterval(() => {
+        try {
+            applyRemovals();
+        } catch (error) {
+        }
+    }, 5000);
 })();

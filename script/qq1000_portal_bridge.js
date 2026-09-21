@@ -290,6 +290,13 @@
      * ------------------------------------------------------------------ */
     const UPDATE_VERSION_URL =
         "https://raw.githubusercontent.com/QQ1000COM/qq1000-chrome-extension/main/version.json";
+    // raw.githubusercontent.com 在国内经常被污染/超时，失败时改用 jsDelivr 镜像再试一次，
+    // 否则更新检测会静默失效（用户永远收不到升级提示）。
+    const UPDATE_VERSION_MIRRORS = [
+        UPDATE_VERSION_URL,
+        "https://cdn.jsdelivr.net/gh/QQ1000COM/qq1000-chrome-extension@main/version.json",
+        "https://fastly.jsdelivr.net/gh/QQ1000COM/qq1000-chrome-extension@main/version.json"
+    ];
     const UPDATE_CHECK_KEY = "qq1000_ext_update_checked_at";
     const UPDATE_CHECK_TTL = 12 * 60 * 60 * 1000;
 
@@ -325,14 +332,22 @@
         } catch (error) {
             return;
         }
-        fetch(UPDATE_VERSION_URL + "?_t=" + now, { cache: "no-store", credentials: "omit" })
-            .then(response => (response.ok ? response.json() : null))
-            .then(payload => {
-                if (!payload || !payload.version) return;
-                if (!isNewerVersion(payload.version, currentVersion)) return;
-                showBanner("插件有新版本 v" + payload.version + "（当前 v" + currentVersion + "），请更新");
-            })
-            .catch(() => {});
+        const attempt = index => {
+            if (index >= UPDATE_VERSION_MIRRORS.length) return;
+            const url = UPDATE_VERSION_MIRRORS[index] + (UPDATE_VERSION_MIRRORS[index].includes("?") ? "&" : "?") + "_t=" + now;
+            fetch(url, { cache: "no-store", credentials: "omit" })
+                .then(response => (response.ok ? response.json() : null))
+                .then(payload => {
+                    if (!payload || !payload.version) {
+                        attempt(index + 1);
+                        return;
+                    }
+                    if (!isNewerVersion(payload.version, currentVersion)) return;
+                    showBanner("插件有新版本 v" + payload.version + "（当前 v" + currentVersion + "），请更新");
+                })
+                .catch(() => attempt(index + 1));
+        };
+        attempt(0);
     }
 
     if (document.readyState === "loading") {
