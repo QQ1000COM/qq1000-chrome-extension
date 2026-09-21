@@ -1,4 +1,4 @@
-<?xml version='1.0' encoding='UTF-8'?>
+<?xml version='5.60' encoding='UTF-8'?>
 <!--
   Chrome 自托管更新清单（self-hosted update manifest）。
   发布流程会随 manifest.json 的版本号自动更新这里的 version 字段。
