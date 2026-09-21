@@ -1,0 +1,88 @@
+{
+  "version": "2.0.1",
+  "updateTime": "2026-04-05",
+  "platforms": [
+    {
+      "id": "taobao",
+      "name": "淘宝",
+      "enabled": true,
+      "urlPatterns": [
+        "*://item.taobao.com/item.htm*",
+        "*://detail.tmall.com/item.htm*",
+        "*://h5.m.taobao.com/awp/core/detail.htm*"
+      ],
+      "htmlCaptureRules": [
+        {
+          "ruleKey": "taobao_detail_html",
+          "name": "淘宝详情页HTML（URL参数触发）",
+          "enabled": false,
+          "captureMode": "url_param",
+          "urlParam": "cache_html",
+          "htmlContentMatch": null,
+          "requireAll": false,
+          "storageKey": null,
+          "ttl": 300000,
+          "persist": true,
+          "captureDelay": 500
+        }
+      ],
+      "apiRules": [
+        {
+          "ruleKey": "mtop.user.getusersimple",
+          "name": "测试演示",
+          "urlPattern": "mtop.user.getusersimple",
+          "matchType": "contains",
+          "captureRequest": true,
+          "captureResponse": true,
+          "domId": "getusersimple111",
+          "storageKey": null,
+          "ttl": 300000,
+          "persist": true
+        }
+      ],
+      "idExtractor": {
+        "type": "url",
+        "param": "id",
+        "pattern": "[?&]id=(\\d+)",
+        "required": false
+      }
+    },
+    {
+      "id": "tmall_publish",
+      "name": "天猫发布",
+      "enabled": true,
+      "urlPatterns": [
+        "*://sell.publish.tmall.com/tmall/publish.htm*"
+      ],
+      "htmlCaptureRules": [],
+      "apiRules": [
+        {
+          "ruleKey": "tmall_export_sku_template",
+          "name": "天猫SKU模板导出 exportSkuTemplate",
+          "urlPattern": "excel/sku/exportSkuTemplate",
+          "matchType": "contains",
+          "captureRequest": true,
+          "captureResponse": true,
+          "domId": "kdcm_tmall_export_sku_template",
+          "storageKey": "tmall_export_sku_template_{itemId}",
+          "ttl": 300000,
+          "persist": true
+        }
+      ],
+      "idExtractor": {
+        "type": "url",
+        "param": "catId",
+        "pattern": "[?&]catId=(\\d+)",
+        "required": false
+      }
+    }
+  ],
+  "global": {
+    "maxRecords": 100,
+    "autoCleanup": true,
+    "logLevel": "info",
+    "remoteConfigUrl": "",
+    "defaultTTL": 300000,
+    "updateInterval": 3600000
+  }
+}

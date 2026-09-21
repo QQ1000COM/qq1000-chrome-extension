@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>QQ1000电商</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            width: 360px;
+            margin: 0;
+            color: #172033;
+            background: #f5f7fb;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+        }
+        main { padding: 16px; }
+        header { display: flex; align-items: center; gap: 10px; }
+        header img { width: 40px; height: 40px; border-radius: 10px; }
+        h1 { margin: 0; font-size: 16px; }
+        .version { margin-top: 3px; color: #7b8497; font-size: 12px; }
+        .card {
+            margin-top: 14px;
+            padding: 14px;
+            border: 1px solid #e2e7f0;
+            border-radius: 12px;
+            background: #fff;
+        }
+        .state { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+        .dot { width: 9px; height: 9px; border-radius: 50%; background: #f04438; flex: 0 0 9px; }
+        .dot.on { background: #19b36b; }
+        p { margin: 8px 0 0; color: #687287; font-size: 12px; line-height: 1.65; }
+        label { display: block; margin-top: 10px; font-size: 12px; color: #526076; }
+        input {
+            width: 100%;
+            margin-top: 5px;
+            padding: 9px 10px;
+            border: 1px solid #d7dde8;
+            border-radius: 8px;
+            font-size: 13px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        input:focus { outline: 2px solid #c7d2fe; border-color: #4568f2; }
+        button {
+            width: 100%;
+            margin-top: 10px;
+            padding: 10px 12px;
+            border: 0;
+            border-radius: 8px;
+            color: #fff;
+            background: #4568f2;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        button:hover { background: #3455dc; }
+        button.secondary { background: #fff; color: #475467; border: 1px solid #d0d5dd; }
+        button.secondary:hover { background: #f9fafb; }
+        button:disabled { opacity: .55; cursor: not-allowed; }
+        #status { min-height: 16px; margin-top: 8px; font-size: 12px; text-align: center; }
+        #status.error { color: #b42318; }
+        #status.ok { color: #067647; }
+        a.link { color: #4568f2; font-size: 12px; text-decoration: none; }
+        a.link:hover { text-decoration: underline; }
+        .row { display: flex; gap: 8px; }
+        .row button { margin-top: 0; }
+        .quota { margin-top: 10px; border-top: 1px solid #eef1f6; padding-top: 10px; }
+        .quota-item {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 7px 0; font-size: 12px; border-bottom: 1px dashed #eef1f6;
+        }
+        .quota-item:last-child { border-bottom: 0; }
+        .quota-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        .quota-name span.n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .quota-value { font-weight: 600; white-space: nowrap; }
+        .quota-value small { font-weight: 400; color: #98a2b3; }
+        .hidden { display: none !important; }
+        .muted { color: #98a2b3; font-size: 12px; }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <img src="icons/icon-64.png" alt="QQ1000电商">
+        <div>
+            <h1>QQ1000电商</h1>
+            <div class="version">版本 <span id="version">-</span></div>
+        </div>
+    </header>
+
+    <!-- 已登录 -->
+    <section id="panel-user" class="card hidden">
+        <div class="state"><span class="dot on"></span><span id="user-name">已登录</span></div>
+        <p id="user-meta"></p>
+        <div class="quota" id="quota-list"></div>
+        <div class="row" style="margin-top:12px">
+            <button type="button" class="secondary" id="refresh">刷新次数</button>
+            <button type="button" class="secondary" id="logout">退出登录</button>
+        </div>
+    </section>
+
+    <!-- 未登录 -->
+    <section id="panel-login" class="card hidden">
+        <div class="state"><span class="dot"></span><span>未登录 · 功能已停用</span></div>
+        <p>本插件已改为在线登录：请粘贴 <b>tu.qq1000.com 用户中心</b> 里的「用户密钥」，登录后自动跟随该账号的会员权益与插件次数。</p>
+        <label for="key">用户密钥</label>
+        <input id="key" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴你的用户密钥">
+        <button type="button" id="login">登录</button>
+        <button type="button" class="secondary" id="open-profile">打开用户中心获取密钥</button>
+        <div id="status" role="status"></div>
+    </section>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

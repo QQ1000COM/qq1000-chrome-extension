@@ -1,0 +1,26 @@
+{
+  "env": "build",
+  "isDeBug": false,
+  "cdnHost": "https://tu.qq1000.com/plugin-static",
+  "apiHost": "https://tu.qq1000.com",
+  "offlineMode": false,
+  "loginRequired": true,
+  "profileUrl": "https://tu.qq1000.com/profile",
+  "loginUrl": "https://tu.qq1000.com/login",
+  "toolsPluginToken": "9d7f3e956f5941d59ae7968440c370191943d125525f4cef8269f2d06aad0595",
+  "versions": "5.60",
+  "offlineJsVersion": 280,
+  "pluginName": "QQ1000电商",
+  "titleName": "QQ1000电商",
+  "brandName": "QQ1000电商",
+  "aiAd": {
+    "label": "QQ1000.AI",
+    "url": "https://tu.qq1000.com",
+    "subtitle": "tu.qq1000.com"
+  },
+  "guestMode": {
+    "enabled": false,
+    "unlimited": false,
+    "label": ""
+  }
+}

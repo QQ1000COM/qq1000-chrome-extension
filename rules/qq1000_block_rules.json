@@ -1,0 +1,222 @@
+[
+  {
+    "id": 92001,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||koudai89.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92002,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||koudai39.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92003,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||koudai69.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92004,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||kd12.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92005,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||kd29.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92006,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||kd123.cn^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92007,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||koudaiai.cn^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92008,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||lipinduihuan.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92009,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||diantoushi.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  },
+  {
+    "id": 92010,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||dianshangjiaofu.com^",
+      "resourceTypes": [
+        "main_frame",
+        "sub_frame",
+        "script",
+        "xmlhttprequest",
+        "websocket",
+        "ping",
+        "other",
+        "csp_report",
+        "webtransport",
+        "webbundle"
+      ]
+    }
+  }
+]

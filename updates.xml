@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Chrome 自托管更新清单（self-hosted update manifest）。
+  发布流程会随 manifest.json 的版本号自动更新这里的 version 字段。
+
+  说明：Chrome 的自动更新只对「用 CRX 安装」的扩展生效，且 codebase 指向的 CRX
+  必须使用与该扩展相同的私钥签名（打包私钥不要进仓库，放 GitHub Secret）。
+  当前插件是「加载已解压的扩展程序」方式安装的，Chrome 不会自动更新它，
+  所以真正生效的是插件内置的更新检测（读取本仓库的 version.json 后提示升级）。
+-->
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='qq1000-chrome-extension'>
+    <updatecheck codebase='https://github.com/QQ1000COM/qq1000-chrome-extension/releases/latest/download/qq1000-chrome-extension.crx' version='5.60'/>
+  </app>
+</gupdate>

@@ -1,0 +1,222 @@
+{
+  "name": "QQ1000电商",
+  "version": "5.60",
+  "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnolia8M3+FWNDK4gpubtYxSp0YolAeAsY/z2TA9Ew4jXNit8aCDR1VqxPTWL/N4ivfJUzt8zdF+f0wCbCPVb7svIcseq8djEN/w08XbYwn9InD8beGaGbnqCjwkW8xrnsKJJLqpx6HUnGIjvIbWIFpIAGcshfEWWENvPppi+RUgkES6GDdWa3HBxPB25G1IuPGAL1tm5eCo9eIrquMk+XlH1m8v0qudL0sAauF4StO2hh9vxyyMupyNmiQpT9q0Kg6cHQbpr+G61UyTtY5T9DfHVgdIFyNX4bKyHaATR/EiE5PM2ONk98nTwk5h4swXhyOxK6aNpbJOIKjzFJwlTnQIDAQAB",
+  "description": "专业的淘宝天猫、拼多多、京东、抖音等平台的卖家运营工具。需使用 tu.qq1000.com 的用户密钥登录后使用，脚本与配置全部在线下发。",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "19": "icons/icon-19.png",
+    "38": "icons/icon-38.png",
+    "64": "icons/icon-64.png",
+    "128": "icons/icon-128.png"
+  },
+  "short_name": "QQ1000电商",
+  "homepage_url": "https://tu.qq1000.com",
+  "background": {
+    "service_worker": "script/service_worker_new.js",
+    "type": "module"
+  },
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "background",
+    "cookies",
+    "declarativeContent",
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "declarativeNetRequestWithHostAccess",
+    "downloads",
+    "notifications",
+    "offscreen",
+    "scripting",
+    "sessions",
+    "storage",
+    "tabs",
+    "userScripts",
+    "unlimitedStorage",
+    "webNavigation",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "https://tu.qq1000.com/*",
+    "<all_urls>"
+  ],
+  "externally_connectable": {
+    "ids": [
+      "*"
+    ],
+    "matches": [
+      "*://*/*"
+    ],
+    "accepts_tls_channel_id": false
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "qq1000_block",
+        "enabled": true,
+        "path": "rules/qq1000_block_rules.json"
+      }
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.tmall.hk/*",
+        "*://*.1688.com/*",
+        "*://*.pinduoduo.com/*",
+        "*://*.yangkeduo.com/*",
+        "*://*.jd.com/*",
+        "*://*.jd.hk/*",
+        "*://*.douyin.com/*",
+        "*://*.jinritemai.com/*",
+        "*://*.kwaixiaodian.com/*",
+        "*://*.kuaishou.com/*",
+        "*://*.goofish.com/*",
+        "*://*.alimama.com/*",
+        "*://*.95095.com/*",
+        "*://*.liangxinyao.com/*",
+        "*://*.weixin.qq.com/*",
+        "*://*.qq1000.com/*"
+      ],
+      "js": [
+        "script/qq1000_portal_bridge.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.tmall.hk/*",
+        "*://*.1688.com/*",
+        "*://*.pinduoduo.com/*",
+        "*://*.yangkeduo.com/*",
+        "*://*.jd.com/*",
+        "*://*.jd.hk/*",
+        "*://*.douyin.com/*",
+        "*://*.jinritemai.com/*",
+        "*://*.kwaixiaodian.com/*",
+        "*://*.kuaishou.com/*",
+        "*://*.goofish.com/*",
+        "*://*.alimama.com/*",
+        "*://*.95095.com/*",
+        "*://*.liangxinyao.com/*",
+        "*://*.weixin.qq.com/*"
+      ],
+      "js": [
+        "script/interceptor/content_interceptor.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "type": "module",
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.tmall.hk/*",
+        "*://*.1688.com/*",
+        "*://*.pinduoduo.com/*",
+        "*://*.yangkeduo.com/*",
+        "*://*.jd.com/*",
+        "*://*.jd.hk/*",
+        "*://*.douyin.com/*",
+        "*://*.jinritemai.com/*",
+        "*://*.kwaixiaodian.com/*",
+        "*://*.kuaishou.com/*",
+        "*://*.goofish.com/*",
+        "*://*.alimama.com/*",
+        "*://*.95095.com/*",
+        "*://*.liangxinyao.com/*",
+        "*://*.weixin.qq.com/*",
+        "*://*.qq1000.com/*"
+      ],
+      "js": [
+        "script/content_script_loader_v3.js"
+      ],
+      "css": [],
+      "run_at": "document_end",
+      "all_frames": true,
+      "type": "module",
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.tmall.hk/*",
+        "*://*.1688.com/*",
+        "*://*.pinduoduo.com/*",
+        "*://*.yangkeduo.com/*",
+        "*://*.jd.com/*",
+        "*://*.jd.hk/*",
+        "*://*.douyin.com/*",
+        "*://*.jinritemai.com/*",
+        "*://*.kwaixiaodian.com/*",
+        "*://*.kuaishou.com/*",
+        "*://*.goofish.com/*",
+        "*://*.alimama.com/*",
+        "*://*.95095.com/*",
+        "*://*.liangxinyao.com/*",
+        "*://*.weixin.qq.com/*"
+      ],
+      "js": [
+        "script/qq1000_ui_overrides.js"
+      ],
+      "run_at": "document_end",
+      "all_frames": true,
+      "match_about_blank": true
+    },
+    {
+      "matches": [
+        "*://*.taobao.com/*",
+        "*://*.tmall.com/*",
+        "*://*.tmall.hk/*"
+      ],
+      "js": [
+        "script/qq1000_buyershow_download_patch.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "19": "icons/icon-19.png",
+      "38": "icons/icon-38.png",
+      "64": "icons/icon-64.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "QQ1000电商",
+    "default_popup": "popup.html"
+  },
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "source/*",
+        "script/*",
+        "script/work/*",
+        "script/interceptor/*",
+        "config/*",
+        "icons/*",
+        "popup.html",
+        "popup.js"
+      ]
+    }
+  ]
+}
