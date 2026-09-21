@@ -1657,3 +1657,23 @@ html body .qq1000-tools-row .cj-btn-shu {
         }
     }, 5000);
 })();
+
+/* qq1000: 只保留「选品池」——商品库入口（详情页那几个 Tab 里的一个）摘掉。
+   按 Element UI 的 Tab 结构与文案双重匹配，避免误删别的文字。 */
+;(function () {
+    try {
+        if (window.__QQ1000_TAB_PURGE__) return;
+        window.__QQ1000_TAB_PURGE__ = true;
+        var REMOVE = ["商品库"];
+        function purge() {
+            var nodes = document.querySelectorAll(".el-tabs__item, [role=\"tab\"]");
+            Array.prototype.forEach.call(nodes, function (node) {
+                var text = String(node.textContent || "").trim();
+                if (REMOVE.indexOf(text) === -1) return;
+                if (node.parentElement) node.remove();
+            });
+        }
+        purge();
+        setInterval(purge, 5000);
+    } catch (error) {}
+})();
