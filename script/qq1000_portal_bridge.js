@@ -385,3 +385,25 @@
         checkExtensionUpdate();
     }
 })();
+
+/* qq1000: 预热到插件 CDN 的连接。插件资源都在 tu.qq1000.com，
+   提前做 DNS/TLS 握手，首次拉 bundle 能省 100~300ms。 */
+;(function () {
+    try {
+        var head = document.head || document.documentElement;
+        if (!head || document.querySelector("link[data-qq1000-preconnect]")) return;
+        ["https://tu.qq1000.com"].forEach(function (url) {
+            var preconnect = document.createElement("link");
+            preconnect.rel = "preconnect";
+            preconnect.href = url;
+            preconnect.crossOrigin = "anonymous";
+            preconnect.setAttribute("data-qq1000-preconnect", "1");
+            head.appendChild(preconnect);
+            var dns = document.createElement("link");
+            dns.rel = "dns-prefetch";
+            dns.href = url;
+            dns.setAttribute("data-qq1000-preconnect", "1");
+            head.appendChild(dns);
+        });
+    } catch (error) {}
+})();
