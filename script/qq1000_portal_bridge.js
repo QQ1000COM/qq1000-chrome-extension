@@ -207,6 +207,9 @@
         ".cj-wg-overlay",
         ".plugin-wrapper"
     ];
+    // 密码框隐藏后仍要带上一个值，随便什么内容都行（服务端只认账号那一栏的密钥）
+    const KEY_PLACEHOLDER_VALUE = "qq1000-key";
+
     function relabelLoginDialogInputs() {
         LOGIN_SCOPE_SELECTORS.forEach(selector => {
             let scopes;
@@ -224,12 +227,30 @@
                     input.dataset.qq1000KeyHint = "1";
                     input.setAttribute("placeholder", "用户密钥（在 tu.qq1000.com 用户中心复制）");
                     // 密码框必须取自同一个弹窗，不能再去全文档抓第一个 password 输入框。
+                    // 本站只支持密钥登录：密码那一行直接隐藏，并自动填一个占位值 ——
+                    // 插件客户端提交时会带上账号+密码两个字段，删掉会导致登录请求缺字段。
                     const password = scope.querySelector('input[type="password"]');
-                    if (password && !password.dataset.qq1000KeyHint) {
-                        password.dataset.qq1000KeyHint = "1";
-                        password.setAttribute("placeholder", "密钥已填在上一栏，这里随便填");
+                    if (password) {
+                        if (!password.dataset.qq1000KeyHint) {
+                            password.dataset.qq1000KeyHint = "1";
+                            password.setAttribute("placeholder", "密钥已填在上一栏，这里随便填");
+                        }
+                        const row = password.closest(".kdcm-input-row") ||
+                            password.closest(".lm2-input-row") || password.parentElement;
+                        if (row && row.style.display !== "none") row.style.display = "none";
+                        if (password.value !== KEY_PLACEHOLDER_VALUE) {
+                            password.value = KEY_PLACEHOLDER_VALUE;
+                            password.dispatchEvent(new Event("input", { bubbles: true }));
+                            password.dispatchEvent(new Event("change", { bubbles: true }));
+                        }
                     }
                 });
+            });
+        });
+        // 注册 / 忘记密码这些入口本站不提供，直接摘掉
+        [".lm2-register-row", ".lm2-forgot", ".lm2-forgot-password"].forEach(className => {
+            document.querySelectorAll(className).forEach(node => {
+                if (node.parentElement) node.remove();
             });
         });
     }
