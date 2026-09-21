@@ -45,6 +45,8 @@
     }, 1500);
 
     let adConfig = { ...DEFAULT_AD };
+    // 最近一次的广告位数据：面板重新渲染后要靠它把搬家面板的两条推广入口再贴一次
+    let lastAdsByPlacement = {};
     let applyTimer = null;
     // 门户配置（品牌 + 广告位）的刷新状态：后台改完要尽快反映到插件。
     let lastAnywherePurgeAt = 0;
@@ -1305,6 +1307,79 @@ html body .qq1000-tools-row .cj-btn-shu {
         });
     }
 
+    /**
+     * 搬家面板里的两个推广入口（礼品代发 / 查降权号）改为读后台广告位：
+     * placement = ``move_panel``，每条广告一个入口，互不影响。
+     *   - 按标题关键词归位（含「礼品/代发」的进礼品代发位，含「降权」的进查降权位），
+     *     其余按后台顺序补位；
+     *   - 后台没配置这个位置时不动，保留插件原来的条目；
+     *   - 只配了一条时，另一个入口下线（这样「单独配置」才真的可控）。
+     * 节点定位沿用「自身直接文本 + 插件类名前缀」的方式，不依赖具体类名。
+     */
+    const MOVE_AD_SLOTS = [
+        { label: "礼品代发", match: /礼品|代发/ },
+        { label: "查降权号", match: /降权/ }
+    ];
+    const PLUGIN_OWNED_CLASS = /^(cj-|jc-|gg-|gm-|uc-|kd-|kdcm|qq1000-|h-00|plugin-)/;
+
+    function directLabelNode(label) {
+        const found = [];
+        document.querySelectorAll("div, span, a, li, p").forEach(node => {
+            if (!node.parentElement || node.closest("[data-qq1000-tools]")) return;
+            if (normalizeText(directTextOf(node)) !== label) return;
+            let cursor = node;
+            let depth = 0;
+            while (cursor && depth < 5) {
+                if (PLUGIN_OWNED_CLASS.test(String(cursor.className || ""))) {
+                    found.push(node);
+                    return;
+                }
+                cursor = cursor.parentElement;
+                depth += 1;
+            }
+        });
+        return found.length ? found[found.length - 1] : null;
+    }
+
+    function applyMovePanelAds(ads) {
+        // move_panel 是后台新增的专属位置（需要重新构建前端后才会出现在下拉里）；
+        // 重建前用「公告条 notice」这个同样没被其它地方占用、后台本来就有的投放位置。
+        const source = (ads && (ads.move_panel || ads.notice)) || [];
+        const rows = Array.isArray(source) ? source.slice() : [];
+        if (!rows.length) return;   // 后台没配置：保持插件原来的条目
+        const assigned = [];
+        MOVE_AD_SLOTS.forEach(slot => {
+            const hit = rows.find(row => !assigned.includes(row) && slot.match.test(String(row.title || "")));
+            slot.ad = hit || null;
+            if (hit) assigned.push(hit);
+        });
+        const rest = rows.filter(row => !assigned.includes(row));
+        MOVE_AD_SLOTS.forEach(slot => {
+            if (!slot.ad && rest.length) slot.ad = rest.shift();
+        });
+        MOVE_AD_SLOTS.forEach(slot => {
+            const node = directLabelNode(slot.label);
+            if (!node) return;
+            if (!slot.ad) {
+                removeNode(node.closest("li") || node);
+                return;
+            }
+            const title = String(slot.ad.title || "").trim();
+            if (title && normalizeText(node.textContent) !== title) node.textContent = title;
+            const url = String(slot.ad.linkUrl || "").trim();
+            if (!url) return;
+            const entry = node.closest("li, a, [class*='entry'], [class*='menu'], [class*='item']") || node.parentElement;
+            if (!entry || entry.dataset.qq1000AdUrl === url) return;
+            entry.dataset.qq1000AdUrl = url;
+            entry.addEventListener("click", event => {
+                // 拦掉插件自己的跳转，改跳后台配置的地址
+                event.preventDefault();
+                event.stopPropagation();
+                window.open(url, "_blank");
+            }, true);
+        });
+    }
+
     /** 用最新一份门户配置重绘侧栏文案、顶部横幅与弹窗广告。 */
     function renderPortalConfig(data) {
         const branding = data.branding || {};
@@ -1325,6 +1400,8 @@ html body .qq1000-tools-row .cj-btn-shu {
             injectBannerAd(pickAd(ads, "banner"));
             showPopupAd(pickAd(ads, "popup"));
             renderPanelAdBar(ads);
+            lastAdsByPlacement = ads;
+            applyMovePanelAds(ads);
         } catch (error) {}
     }
 
@@ -1477,6 +1554,7 @@ html body .qq1000-tools-row .cj-btn-shu {
     setInterval(() => {
         try {
             applyRemovals();
+            applyMovePanelAds(lastAdsByPlacement);
         } catch (error) {
         }
     }, 5000);
