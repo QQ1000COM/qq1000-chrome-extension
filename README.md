@@ -18,12 +18,12 @@
 - **`version.json`**：发布流程自动生成，扩展内置的更新检测会读取它
   （`https://raw.githubusercontent.com/QQ1000COM/qq1000-chrome-extension/main/version.json`），
   发现远端版本更高时在页面上提示「插件有新版本」，12 小时最多检查一次。
-- **`updates.xml`**：Chrome 自托管更新清单，同样由发布流程自动跟随版本号。
-  注意 Chrome 的自动更新只对「用 CRX 安装」的扩展生效，且要求 CRX 用同一私钥签名
-  （私钥请放 GitHub Secret，不要进仓库）；当前「加载已解压」的安装方式不会自动更新，
-  所以实际生效的是上面那条内置检测。
+- **`updates.xml`**：保留合法的 Chrome 更新响应，当前返回 `noupdate`。
+  此仓库只发布 ZIP，不生成或宣称提供已签名 CRX；「加载已解压」不会自动替换安装目录。
+  用户收到版本提示后需下载新 ZIP、覆盖原目录并在扩展管理页重新加载。
 - **发布流程**：`.github/workflows/release.yml` —— 推送 `main` 时自动
-  打包 ZIP、发布 Release（tag 为 `v版本号`）、同步 `version.json` 与 `updates.xml`。
+  运行安全回归、打包 ZIP、发布 Release 与 SHA-256 校验文件（tag 为 `v版本号`），
+  并同步 `version.json` 与 `updates.xml`。下载地址固定到具体版本。
 
 ## 发版步骤
 

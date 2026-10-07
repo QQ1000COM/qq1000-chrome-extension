@@ -66,9 +66,13 @@ async function apiRequest(path, options = {}) {
     try {
         const response = await fetch(`${API_HOST}${path}`, {
             method: options.method || "GET",
+            redirect: "error",
             headers: Object.assign({ "user-token": options.token || "" }, options.headers || {}),
             signal: controller.signal,
         });
+        if (response.status === 401 || response.status === 403) {
+            return { state: false, code: response.status === 403 ? 102 : 401, msg: "密钥已失效或权限不足，请重新登录" };
+        }
         const text = await response.text();
         try {
             return JSON.parse(text);
@@ -115,19 +119,40 @@ function renderQuotas(raw, unlimited) {
         box.innerHTML = '<div class="muted">后台还没有配置插件。</div>';
         return;
     }
-    box.innerHTML = rows
-        .map(row => {
+    box.replaceChildren();
+    rows.forEach(row => {
             const isUnlimited = unlimited || row.unlimited;
             const remaining = isUnlimited ? "不限" : String(row.remaining ?? 0);
             const unit = row.unit || "次";
-            const suffix = isUnlimited ? "" : `<small> / ${row.quota ?? 0} ${unit}</small>`;
             const tone = isUnlimited || Number(row.remaining ?? 0) > 0 ? "#0d0d0d" : "#b42318";
-            return `<div class="quota-item">
-    <span class="quota-name">${row.icon || "🧩"}<span class="n">${row.name || row.plugin_code}</span></span>
-    <span class="quota-value" style="color:${tone}">${remaining}${suffix}</span>
-</div>`;
-        })
-        .join("");
+            const item = document.createElement("div");
+            item.className = "quota-item";
+            const name = document.createElement("span");
+            name.className = "quota-name";
+            name.textContent = String(row.icon || "🧩");
+            const label = document.createElement("span");
+            label.className = "n";
+            label.textContent = String(row.name || row.plugin_code || "");
+            name.appendChild(label);
+            const value = document.createElement("span");
+            value.className = "quota-value";
+            value.style.color = tone;
+            value.textContent = remaining;
+            if (!isUnlimited) {
+                const suffix = document.createElement("small");
+                suffix.textContent = ` / ${row.quota ?? 0} ${unit}`;
+                value.appendChild(suffix);
+            }
+            item.appendChild(name);
+            item.appendChild(value);
+            box.appendChild(item);
+        });
+}
+
+async function clearStoredSession() {
+    await storageRemove("sync", [TOKEN_KEY, INFO_KEY, "cj-user-vipState"]);
+    await storageRemove("local", ["cj-plugin-token", TOKEN_KEY]);
+    try { window.localStorage.removeItem("cj-tools-plugin-token"); } catch (error) {}
 }
 
 function renderUserHeader(info, token) {
@@ -155,7 +180,7 @@ async function loadUser() {
     const payload = await apiRequest("/plugin/api/user/info", { token });
     if (!payload || payload.state === false || UNAUTHORIZED_CODES.has(Number(payload.code))) {
         if (payload && UNAUTHORIZED_CODES.has(Number(payload.code))) {
-            await storageRemove("sync", [TOKEN_KEY, INFO_KEY, "cj-user-vipState"]);
+            await clearStoredSession();
             showPanel(false);
             setStatus(payload.msg || "密钥已失效，请重新登录", "error");
             return;
@@ -247,11 +272,7 @@ async function handleLogout() {
     const token = String((stored && stored[TOKEN_KEY]) || "").trim();
     setStatus("正在退出…");
     if (token) await apiRequest("/plugin/api/longin/out_login", { method: "POST", token });
-    await storageRemove("sync", [TOKEN_KEY, INFO_KEY, "cj-user-vipState"]);
-    await storageRemove("local", ["cj-plugin-token", TOKEN_KEY]);
-    try {
-        window.localStorage.removeItem("cj-tools-plugin-token");
-    } catch (error) {}
+    await clearStoredSession();
     showPanel(false);
     setStatus("已退出登录", "ok");
 }

@@ -25,7 +25,7 @@
     const API_HOST = "https://tu.qq1000.com";
     const PROFILE_URL = `${API_HOST}/profile`;
     const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
-    const UNAUTHORIZED_CODES = new Set([101, 102]);
+    const UNAUTHORIZED_CODES = new Set([101, 102, 401]);
 
     let token = "";
     let banner = null;
@@ -146,9 +146,13 @@
         try {
             const response = await fetch(`${API_HOST}${path}`, {
                 method: options.method || "GET",
+                redirect: "error",
                 headers: Object.assign({ "user-token": token }, options.headers || {}),
                 signal: controller.signal
             });
+            if (response.status === 401 || response.status === 403) {
+                return { code: response.status === 403 ? 102 : 401, msg: "密钥已失效或权限不足，请重新登录" };
+            }
             return await response.json();
         } catch (error) {
             return null;
@@ -171,7 +175,9 @@
         const now = Date.now();
         if (!force && now - lastHeartbeatAt < 60000) return;
         lastHeartbeatAt = now;
+        const checkedToken = token;
         const payload = await requestJson("/plugin/api/user/info");
+        if (token !== checkedToken) return;
         if (!payload) return;
         if (UNAUTHORIZED_CODES.has(Number(payload.code))) {
             await clearSession();

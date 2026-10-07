@@ -1,8 +1,5 @@
 name: release-extension
 
-# 每次推送 main 就重新打包扩展，并把版本元数据（version.json / updates.xml）同步好。
-# 版本号的唯一来源是 manifest.json 里的 version 字段。
-
 on:
   push:
     branches: [main]
@@ -15,75 +12,71 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-extension-main
+  cancel-in-progress: false
+
 jobs:
   package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: 读取 manifest 版本号
+      - name: 安全回归检查
+        run: node --test tests/security.test.mjs
+
+      - name: 准备版本元数据
         id: version
         run: |
-          python3 -c "
-          import json
-          print('version=' + json.load(open('manifest.json', encoding='utf-8'))['version'])
-          " >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import base64, datetime, hashlib, json, os, pathlib
+          manifest = json.loads(pathlib.Path("manifest.json").read_text(encoding="utf-8"))
+          version = manifest["version"]
+          repo = "QQ1000COM/qq1000-chrome-extension"
+          previous = json.loads(pathlib.Path("version.json").read_text(encoding="utf-8"))
+          payload = {
+              "version": version,
+              "updatedAt": previous.get("updatedAt") if previous.get("version") == version else datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "zipUrl": f"https://github.com/{repo}/releases/download/v{version}/qq1000-chrome-extension.zip",
+              "downloadUrl": f"https://github.com/{repo}/releases/tag/v{version}",
+              "notes": previous.get("notes", "") if previous.get("version") == version else "",
+          }
+          pathlib.Path("version.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          digest = hashlib.sha256(base64.b64decode(manifest["key"])).hexdigest()[:32]
+          appid = "".join(chr(ord("a") + int(char, 16)) for char in digest)
+          # This pipeline only builds an unpacked ZIP. Do not advertise a missing signed CRX.
+          pathlib.Path("updates.xml").write_text(
+              "<?xml version='1.0' encoding='UTF-8'?>\n"
+              "<!-- ZIP-only distribution: no signed CRX update is published. -->\n"
+              "<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>\n"
+              f"  <app appid='{appid}'><updatecheck status='noupdate'/></app>\n"
+              "</gupdate>\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={version}\n")
+          PY
 
-      - name: 打包扩展（排除仓库自身文件）
+      - name: 打包扩展并生成校验和
         run: |
-          zip -r qq1000-chrome-extension.zip . \
-            -x '.git/*' -x '.github/*' -x '*.bak' -x '*.bak-*' \
-            -x 'qq1000-chrome-extension.zip' -x 'README.md'
+          zip -r qq1000-chrome-extension.zip manifest.json config icons rules script source popup.html popup.js version.json updates.xml \
+            -x '*.bak' -x '*.bak-*'
+          sha256sum qq1000-chrome-extension.zip > SHA256SUMS.txt
 
-      - name: 发布 Release（tag = v版本号）
+      - name: 发布 Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
-          files: qq1000-chrome-extension.zip
+          files: |
+            qq1000-chrome-extension.zip
+            SHA256SUMS.txt
           generate_release_notes: true
 
-      - name: 同步 version.json / updates.xml
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+      - name: 同步版本元数据
         run: |
-          python3 - <<'PY'
-          import json, os, re, pathlib, datetime
-
-          version = os.environ["VERSION"]
-          repo = "QQ1000COM/qq1000-chrome-extension"
-          zip_url = f"https://github.com/{repo}/releases/latest/download/qq1000-chrome-extension.zip"
-          page_url = f"https://github.com/{repo}/releases/latest"
-
-          payload = {
-              "version": version,
-              "updatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-              "zipUrl": zip_url,
-              "downloadUrl": page_url,
-              "notes": "",
-          }
-          pathlib.Path("version.json").write_text(
-              json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-          )
-
-          xml = pathlib.Path("updates.xml")
-          text = xml.read_text(encoding="utf-8")
-          text = re.sub(r"version='[^']*'", f"version='{version}'", text)
-          text = re.sub(
-              r"codebase='[^']*'",
-              f"codebase='https://github.com/{repo}/releases/latest/download/qq1000-chrome-extension.crx'",
-              text,
-          )
-          xml.write_text(text, encoding="utf-8")
-          print("version ->", version)
-          PY
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add version.json updates.xml
-          if git diff --cached --quiet; then
-            echo "版本元数据无变化"
-          else
-            git commit -m "chore: 同步版本元数据到 v${VERSION} [skip ci]"
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: 同步版本元数据到 v${{ steps.version.outputs.version }} [skip ci]"
             git push
           fi

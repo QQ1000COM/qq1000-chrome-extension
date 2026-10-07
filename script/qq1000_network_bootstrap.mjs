@@ -12,6 +12,8 @@
  *  3. 暴露 getUserToken / clearUserTokenCache 给插件自己的页面复用。
  */
 
+import { runtimeMessageError } from "./qq1000_security_policy.mjs";
+
 const QQ1000_STATIC_HOST = "https://tu.qq1000.com/plugin-static/";
 const QQ1000_API_HOST = "https://tu.qq1000.com";
 
@@ -48,6 +50,10 @@ export function apiHost() {
 try {
     chrome.runtime.onMessage.addListener((message, _sender, respond) => {
         if (!message || message.cmd !== "qq1000:open-login") return false;
+        if (runtimeMessageError(message, _sender, chrome.runtime.id)) {
+            respond({ ok: false, error: "Untrusted sender" });
+            return false;
+        }
         const url = chrome.runtime.getURL("popup.html?mode=login");
         try {
             chrome.tabs.create({ url, active: true }, () => {
@@ -73,13 +79,16 @@ try {
 
         const isStaticAsset = typeof url === "string" && url.startsWith(QQ1000_STATIC_HOST);
         if (isStaticAsset) {
+            init = Object.assign({}, init || {}, { redirect: "error" });
             try {
                 const token = await getUserToken();
                 if (token) {
                     const base = init || {};
                     const headers = new Headers(base.headers || (input && input.headers) || undefined);
                     if (!headers.has("user-token")) headers.set("user-token", token);
-                    init = Object.assign({}, base, { headers });
+                    // Custom authentication headers must not follow a redirect to
+                    // another origin (fetch only strips some standard headers).
+                    init = Object.assign({}, base, { headers, redirect: "error" });
                 }
             } catch (error) {}
         }
