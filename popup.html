@@ -74,6 +74,9 @@
         .quota-value small { font-weight: 400; color: #98a2b3; }
         .hidden { display: none !important; }
         .muted { color: #98a2b3; font-size: 12px; }
+        .update-help { margin-top: 12px; color: #667085; font-size: 12px; line-height: 1.6; }
+        .update-help summary { cursor: pointer; }
+        .update-help p { margin: 8px 0; }
     </style>
 </head>
 <body>
@@ -82,7 +85,7 @@
         <img src="icons/icon-64.png" alt="QQ1000电商">
         <div>
             <h1>QQ1000电商</h1>
-            <div class="version">版本 <span id="version">-</span></div>
+            <div class="version">版本 <span id="version">-</span> · <a class="link" href="https://github.com/QQ1000COM/qq1000-chrome-extension/releases/latest" target="_blank" rel="noopener noreferrer">下载新版</a></div>
         </div>
     </header>
 
@@ -105,8 +108,13 @@
         <input id="key" type="text" autocomplete="off" spellcheck="false" placeholder="粘贴你的用户密钥">
         <button type="button" id="login">登录</button>
         <button type="button" class="secondary" id="open-profile">打开用户中心获取密钥</button>
-        <div id="status" role="status"></div>
     </section>
+    <div id="status" role="status" aria-live="polite"></div>
+    <details class="update-help">
+        <summary>如何更新插件</summary>
+        <p>下载新版后，解压并覆盖原插件目录，然后在扩展管理页点击本插件的“重新加载”，最后刷新商品页面。</p>
+        <button type="button" class="secondary" id="manage-extension">打开扩展管理页</button>
+    </details>
 </main>
 <script src="popup.js"></script>
 </body>

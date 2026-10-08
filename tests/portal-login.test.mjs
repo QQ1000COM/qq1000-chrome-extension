@@ -44,8 +44,8 @@ const deferred = () => {
     return { promise, resolve };
 };
 
-function bridge({ token = "synthetic", localToken, fetchInfo, fetchUpdate } = {}) {
-    const state = { sync: token ? { [TOKEN_KEY]: token } : {}, local: localToken ? { [TOKEN_KEY]: localToken } : {} };
+function bridge({ token = "synthetic", localToken, fetchInfo, fetchUpdate, localData = {}, pageStorage = new Map(), blockPageStorage = false, now = Date.now() } = {}) {
+    const state = { sync: token ? { [TOKEN_KEY]: token } : {}, local: { ...localData, ...(localToken ? { [TOKEN_KEY]: localToken } : {}) } };
     const storageListeners = [];
     let storageReadsPaused = false;
     const pendingStorageReads = [];
@@ -62,9 +62,13 @@ function bridge({ token = "synthetic", localToken, fetchInfo, fetchUpdate } = {}
     const pendingTimers = new Map();
     let nextTimer = 0;
     let reloads = 0;
-    const store = new Map();
+    const store = pageStorage;
     const window = {
-        localStorage: { getItem: key => store.get(key), setItem: (key, value) => store.set(key, value), removeItem: key => store.delete(key) },
+        localStorage: {
+            getItem: key => { if (blockPageStorage) throw new Error("Storage disabled"); return store.get(key); },
+            setItem: (key, value) => { if (blockPageStorage) throw new Error("Storage disabled"); store.set(key, value); },
+            removeItem: key => store.delete(key),
+        },
         addEventListener: (name, listener) => windowListeners.set(name, listener), location: { reload: () => { reloads++; } },
     };
     const change = (area, value) => {
@@ -90,7 +94,7 @@ function bridge({ token = "synthetic", localToken, fetchInfo, fetchUpdate } = {}
     });
     const requests = [];
     vm.runInNewContext(source, {
-        window, document, AbortController, Event,
+        window, document, AbortController, Event, Date: class extends Date { static now() { return now; } },
         MutationObserver: class { observe() {} },
         chrome: {
             runtime: { getManifest: () => ({ version: "5.79" }) },
@@ -101,17 +105,19 @@ function bridge({ token = "synthetic", localToken, fetchInfo, fetchUpdate } = {}
         fetch: async (url, options) => {
             requests.push({ url, options });
             if (url.includes("/plugin/api/user/info")) return fetchInfo ? fetchInfo(options) : { status: 200, json: async () => ({ code: 0, state: true }) };
-            return fetchUpdate ? fetchUpdate() : { ok: true, json: async () => ({ version: "5.79.1" }) };
+            return fetchUpdate ? fetchUpdate(url, options) : { ok: true, json: async () => ({ version: "5.79.1" }) };
         },
     });
     return {
         state, requests, change,
+        pageStorage,
         pauseStorageReads: () => { storageReadsPaused = true; },
         resumeStorageReads: () => { storageReadsPaused = false; pendingStorageReads.splice(0).forEach(complete => complete()); },
         focus: () => windowListeners.get("focus")?.(),
         banner: () => document.getElementById(BANNER_ID),
         reloadTimers: () => [...pendingTimers.values()].filter(timer => timer.ms === 300),
         runReload: () => { for (const timer of pendingTimers.values()) if (timer.ms === 300) timer.fn(); return reloads; },
+        runTimers: ms => { for (const [id, timer] of pendingTimers) if (timer.ms === ms) { pendingTimers.delete(id); timer.fn(); } },
     };
 }
 
@@ -252,4 +258,42 @@ test("popup reads the account through POST so a shared GET cache cannot choose i
     assert.equal(requests[0].options.method, "POST");
     assert.equal(requests[0].options.headers["user-token"], "synthetic");
     assert.equal(vm.runInContext("els.userName.textContent", context), "test-account");
+});
+
+test("update checks work when the merchant page disables localStorage", async () => {
+    const app = bridge({ blockPageStorage: true });
+    await settle();
+    assert.equal(app.banner()?.dataset.mode, "update");
+});
+
+test("a hanging update mirror times out and falls back to the next mirror", async () => {
+    let requests = 0;
+    const app = bridge({ fetchUpdate: (_url, options) => {
+        if (++requests === 1) return new Promise((_resolve, reject) => options.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+        return { ok: true, json: async () => ({ version: "5.79.1" }) };
+    } });
+    await settle();
+    app.runTimers(8000);
+    await settle();
+    assert.equal(requests, 2);
+    assert.equal(app.banner()?.dataset.mode, "update");
+});
+
+test("a known available update survives a page reload without another version request", async () => {
+    const first = bridge();
+    await settle();
+    let requests = 0;
+    const next = bridge({ localData: first.state.local, pageStorage: first.pageStorage, fetchUpdate: () => { requests++; throw new Error("offline"); } });
+    await settle();
+    assert.equal(next.banner()?.dataset.mode, "update");
+    assert.equal(requests, 0);
+});
+
+test("failed update checks can retry after a short cooldown instead of waiting twelve hours", async () => {
+    const now = Date.now();
+    const first = bridge({ now, fetchUpdate: () => { throw new Error("offline"); } });
+    await settle();
+    const next = bridge({ now: now + 6 * 60 * 1000, localData: first.state.local, pageStorage: first.pageStorage });
+    await settle();
+    assert.equal(next.banner()?.dataset.mode, "update");
 });

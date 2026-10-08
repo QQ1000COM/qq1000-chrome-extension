@@ -28,11 +28,6 @@
     // 从第一帧起就压住插件原来的按钮排布，只等重写后的分组布局
     // （超时兜底会撤掉这个标记，见下面的 setTimeout）。
     document.documentElement.setAttribute("data-qq1000-tools-pending", "1");
-    // 面板可能早于本脚本出现（或本脚本运行完就不再产生 DOM 变动），
-    // 这里立刻同步跑一次：面板在的话马上完成分类重排，不在也没关系。
-    try {
-        syncPanelMount();
-    } catch (error) {}
     // 兜底：整理过程中万一出错、或按钮迟迟没渲染出来，1.5 秒后无论如何都放开显示，
     // 不能因为整理失败就让面板不可见、按钮消失。
     setTimeout(() => {
@@ -48,6 +43,7 @@
     // 最近一次的广告位数据：面板重新渲染后要靠它把搬家面板的两条推广入口再贴一次
     let lastAdsByPlacement = {};
     let applyTimer = null;
+    let panelReadyTimer = null;
     // 门户配置（品牌 + 广告位）的刷新状态：后台改完要尽快反映到插件。
     let lastAnywherePurgeAt = 0;
     let portalFetchedAt = 0;
@@ -501,7 +497,7 @@ html body .qq1000-tools-row .cj-btn-shu {
     let toolRootsCache = { at: 0, roots: [] };
     function toolRoots() {
         const now = Date.now();
-        if (now - toolRootsCache.at < 100 && toolRootsCache.roots.length) return toolRootsCache.roots;
+        if (now - toolRootsCache.at < 100 && toolRootsCache.roots.length && toolRootsCache.roots.every(root => root.isConnected)) return toolRootsCache.roots;
         const roots = [];
         const panel = document.getElementById(PANEL_ID);
         if (panel) roots.push(panel);
@@ -603,6 +599,10 @@ html body .qq1000-tools-row .cj-btn-shu {
             items.push(item);
         });
         if (items.length < 4) return false;
+        // 必须先找到挂载点再搬动按钮；横条模式只有 #gg-top 也要可用。
+        const anchor = document.querySelector(".cj-top .h-00") || document.querySelector(".cj-top") ||
+            document.getElementById(PANEL_ID) || document.getElementById("gg-top") || document.querySelector(".cj-top-bg");
+        if (!anchor) return false;
         if (existing) removeNode(existing);
 
         const buckets = TOOL_GROUPS.map(group => ({ title: group.title, nodes: [] }));
@@ -641,9 +641,6 @@ html body .qq1000-tools-row .cj-btn-shu {
         });
 
         // 挂到顶栏下方
-        const anchor = document.querySelector(".cj-top .h-00") || document.querySelector(".cj-top") ||
-            document.getElementById(PANEL_ID);
-        if (!anchor) return false;
         if (anchor.classList && anchor.classList.contains("h-00")) {
             anchor.insertAdjacentElement("afterend", container);
         } else {
@@ -680,15 +677,11 @@ html body .qq1000-tools-row .cj-btn-shu {
                 const row = separator.parentElement;
                 if (!row || row.closest("[" + TOOLS_ATTR + "]")) return;
                 const hasButton = TOOL_BUTTON_CLASSES.some(className => row.querySelector("." + className));
-                if (!hasButton && !hasVisibleText(row)) removeNode(row);
+                const hasContent = row.querySelector("input, select, textarea, button, img, video, canvas, svg, iframe, [role='status'], [aria-live]");
+                if (!hasButton && !hasContent && !hasVisibleText(row)) removeNode(row);
                 else if (!hasButton) removeNode(separator);
             });
-            root.querySelectorAll("div").forEach(row => {
-                if (row.closest("[" + TOOLS_ATTR + "]") || !row.parentElement) return;
-                if (row.querySelector("." + TOOL_BUTTON_CLASSES.join(", ."))) return;
-                if (row.children.length > 6) return;
-                if (!hasVisibleText(row)) removeNode(row);
-            });
+            // 无文本的 div 也可能承载图片、表单或加载状态，不能按空白整批删除。
         });
     }
 
@@ -709,13 +702,17 @@ html body .qq1000-tools-row .cj-btn-shu {
         } catch (error) {
         }
         if (grouped) {
+            if (panelReadyTimer !== null) clearTimeout(panelReadyTimer);
+            panelReadyTimer = null;
             markPanelsReady();
             return;
         }
         // 分组没成功（比如这个面板里压根没有可分类的工具按钮，或者按钮还没渲染出来）
         // 也必须把面板显示出来 —— 否则它会一直停在「不可见」状态，看起来就是面板消失了。
         // 给一个很短的延迟，兼顾「按钮稍后才到」的情况。
-        setTimeout(markPanelsReady, 250);
+        if (panelReadyTimer === null) {
+            panelReadyTimer = setTimeout(() => { panelReadyTimer = null; markPanelsReady(); }, 250);
+        }
     }
 
     // 「商品信息」那些统计格 + 指定的工具按钮，彻底移除。
@@ -859,6 +856,11 @@ html body .qq1000-tools-row .cj-btn-shu {
     }
 
     function removeCustomerServiceUi() {
+        // Element UI 和“联系客服”文案也被商家后台使用，必须先确认插件归属。
+        const customerWrappers = Array.from(document.querySelectorAll(".el-dialog__wrapper")).filter(wrapper =>
+            wrapper.closest("#cj-goods-side-panel-root, #gg-top, .plugin-wrapper, .kd-dialog, .uc-modal, .uc-overlay") ||
+            wrapper.querySelector(".kd-dialog-service-container, .kd-service-qrcode-dropdown, .kdds-contact-qr, .cj-kf-container")
+        );
         [
             ".cj-kf-container",
             ".cj-kf-qr-dropdown",
@@ -871,7 +873,7 @@ html body .qq1000-tools-row .cj-btn-shu {
             document.querySelectorAll(selector).forEach(removeNode);
         });
 
-        document.querySelectorAll(".el-dialog__wrapper").forEach(wrapper => {
+        customerWrappers.forEach(wrapper => {
             const title = wrapper.querySelector(".el-dialog__title");
             const hasCustomerQr = Array.from(wrapper.querySelectorAll("img")).some(image =>
                 /客服二维码/.test(String(image.getAttribute("alt") || ""))
@@ -1038,6 +1040,7 @@ html body .qq1000-tools-row .cj-btn-shu {
     }
 
     function markBuyerShowDownloadMenus() {
+        if (!document.querySelector(".buyer-show-dialog")) return;
         document.querySelectorAll(".el-dropdown-menu").forEach(menu => {
             const text = normalizeText(menu.textContent);
             if (!text.includes("多文件夹下载") || !text.includes("单文件夹下载")) return;
@@ -1205,21 +1208,29 @@ html body .qq1000-tools-row .cj-btn-shu {
     // 保证「后台改广告 → 插件自动跟上」而不用用户手动刷新页面。
     const PORTAL_TTL = 15000;
     const PORTAL_REFRESH_MS = 30000;
+    const PORTAL_REQUEST_TIMEOUT_MS = 12000;
     const AD_BANNER_ID = "qq1000-portal-ad-banner";
     const AD_POPUP_ID = "qq1000-portal-ad-popup";
 
     function readUserToken() {
         return new Promise(resolve => {
+            const readLocal = () => {
+                try {
+                    chrome.storage.local.get(["cj-user-token"], local => {
+                        const failed = !!chrome.runtime?.lastError;
+                        resolve(failed ? "" : String((local && local["cj-user-token"]) || "").trim());
+                    });
+                } catch (error) { resolve(""); }
+            };
             try {
                 chrome.storage.sync.get(["cj-user-token"], sync => {
-                    const token = String((sync && sync["cj-user-token"]) || "").trim();
+                    const failed = !!chrome.runtime?.lastError;
+                    const token = failed ? "" : String((sync && sync["cj-user-token"]) || "").trim();
                     if (token) return resolve(token);
-                    chrome.storage.local.get(["cj-user-token"], local => {
-                        resolve(String((local && local["cj-user-token"]) || "").trim());
-                    });
+                    readLocal();
                 });
             } catch (error) {
-                resolve("");
+                readLocal();
             }
         });
     }
@@ -1388,7 +1399,7 @@ html body .qq1000-tools-row .cj-btn-shu {
             if (url) {
                 chip.style.cursor = "pointer";
                 chip.title = url;
-                chip.addEventListener("click", () => window.open(url, "_blank"));
+                chip.addEventListener("click", event => openLink(url, event));
             }
             bar.appendChild(chip);
         });
@@ -1410,6 +1421,8 @@ html body .qq1000-tools-row .cj-btn-shu {
     const PLUGIN_OWNED_CLASS = /^(cj-|jc-|gg-|gm-|uc-|kd-|kdcm|qq1000-|h-00|plugin-)/;
 
     function directLabelNode(label) {
+        const remembered = document.querySelector('[data-qq1000-move-ad-slot="' + label + '"]');
+        if (remembered && remembered.isConnected) return remembered;
         const found = [];
         document.querySelectorAll("div, span, a, li, p").forEach(node => {
             if (!node.parentElement || node.closest("[data-qq1000-tools]")) return;
@@ -1446,6 +1459,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         MOVE_AD_SLOTS.forEach(slot => {
             const node = directLabelNode(slot.label);
             if (!node) return;
+            node.dataset.qq1000MoveAdSlot = slot.label;
             if (!slot.ad) {
                 // 摘「整行」：图标与文字在同一行里，只删文字会留下孤零零的图标。
                 // 向上走，只要祖先的文本仍等于这个标签（图标不带文字），就再往上一层。
@@ -1468,11 +1482,13 @@ html body .qq1000-tools-row .cj-btn-shu {
             const entry = node.closest("li, a, [class*='entry'], [class*='menu'], [class*='item']") || node.parentElement;
             if (!entry || entry.dataset.qq1000AdUrl === url) return;
             entry.dataset.qq1000AdUrl = url;
+            if (entry.dataset.qq1000AdBound === "1") return;
+            entry.dataset.qq1000AdBound = "1";
             entry.addEventListener("click", event => {
                 // 拦掉插件自己的跳转，改跳后台配置的地址
                 event.preventDefault();
                 event.stopPropagation();
-                window.open(url, "_blank");
+                openLink(entry.dataset.qq1000AdUrl, event);
             }, true);
         });
     }
@@ -1517,27 +1533,32 @@ html body .qq1000-tools-row .cj-btn-shu {
      */
     function loadOnlinePortalConfig(force) {
         const now = Date.now();
+        if (portalInflight) return portalInflight;
         if (!force) {
-            if (portalInflight) return portalInflight;
             if (now - portalFetchedAt < PORTAL_TTL) return Promise.resolve();
         }
+        let requestToken = "";
         portalInflight = readUserToken()
             .then(token => {
                 if (!token) return null;
+                requestToken = token;
                 const url = `${API_HOST}/plugin/api/index/getPluginFeatures?_t=${Date.now()}`;
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), PORTAL_REQUEST_TIMEOUT_MS);
                 return fetch(url, {
-                    headers: {
-                        "user-token": token,
-                        "Cache-Control": "no-cache",
-                        "Pragma": "no-cache"
-                    },
+                    method: "POST",
+                    headers: { "user-token": token },
+                    redirect: "error",
+                    signal: controller.signal,
                     cache: "no-store",
                     credentials: "omit"
                 })
-                    .then(response => response.json())
-                    .catch(() => null);
+                    .then(response => response.status >= 400 ? null : response.json())
+                    .catch(() => null)
+                    .finally(() => clearTimeout(timer));
             })
-            .then(payload => {
+            .then(async payload => {
+                if (requestToken && requestToken !== await readUserToken()) return;
                 portalFetchedAt = Date.now();
                 if (!payload || payload.state === false || Number(payload.code) !== 0) return;
                 const data = payload.data || {};
@@ -1574,6 +1595,8 @@ html body .qq1000-tools-row .cj-btn-shu {
         document.querySelectorAll(".pool-ai-intro-banner").forEach(node => node.remove());
     }
 
+    // 常量和缓存均初始化后再整理，避免提前调用落入 const/let 暂时性死区。
+    try { syncPanelMount(); } catch (error) {}
     applyOverrides();
     // 尽早写入，保证选品库弹窗首次挂载时就读到「已关闭」。
     dismissUnwantedBanners();
@@ -1669,6 +1692,7 @@ html body .qq1000-tools-row .cj-btn-shu {
             // 选品库弹窗的 Tab 不是标准 el-tabs，按「Tab 特征类名 + 文案精确匹配」来找。
             var nodes = document.querySelectorAll(".el-tabs__item, [role=\"tab\"], [class*=\"tab\"], [class*=\"Tab\"]");
             Array.prototype.forEach.call(nodes, function (node) {
+                if (!node.closest || !node.closest("#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top, .plugin-wrapper, .kd-dialog, .batch-collected-product-list, .collected-list-dialog, .uc-modal, .uc-overlay")) return;
                 var text = String(node.textContent || "").trim();
                 if (REMOVE.indexOf(text) === -1) return;
                 if (node.parentElement) node.remove();

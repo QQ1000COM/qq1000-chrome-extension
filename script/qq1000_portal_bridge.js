@@ -37,11 +37,13 @@
     let reloadTimer = null;
     let heartbeatTimer = null;
     let lastHeartbeatAt = 0;
+    let updateCheckPending = false;
 
     function storageGet(area, keys) {
         return new Promise(resolve => {
             try {
                 chrome.storage[area].get(keys, result => {
+                    void chrome.runtime?.lastError;
                     resolve(result || {});
                 });
             } catch (error) {
@@ -53,7 +55,7 @@
     function storageSet(area, values) {
         return new Promise(resolve => {
             try {
-                chrome.storage[area].set(values, () => resolve(true));
+                chrome.storage[area].set(values, () => resolve(!chrome.runtime?.lastError));
             } catch (error) {
                 resolve(false);
             }
@@ -63,7 +65,7 @@
     function storageRemove(area, keys) {
         return new Promise(resolve => {
             try {
-                chrome.storage[area].remove(keys, () => resolve(true));
+                chrome.storage[area].remove(keys, () => resolve(!chrome.runtime?.lastError));
             } catch (error) {
                 resolve(false);
             }
@@ -344,9 +346,9 @@
             if (document.visibilityState === "visible") heartbeat(true);
         }, HEARTBEAT_INTERVAL_MS);
         document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "visible") heartbeat(true);
+            if (document.visibilityState === "visible") heartbeat();
         });
-        window.addEventListener("focus", () => heartbeat(true));
+        window.addEventListener("focus", () => heartbeat());
     }
 
     try {
@@ -371,8 +373,15 @@
         "https://cdn.jsdelivr.net/gh/QQ1000COM/qq1000-chrome-extension@main/version.json",
         "https://fastly.jsdelivr.net/gh/QQ1000COM/qq1000-chrome-extension@main/version.json"
     ];
-    const UPDATE_CHECK_KEY = "qq1000_ext_update_checked_at";
+    const UPDATE_CHECK_KEY = "qq1000_ext_update_state";
     const UPDATE_CHECK_TTL = 12 * 60 * 60 * 1000;
+    const UPDATE_RETRY_TTL = 5 * 60 * 1000;
+    const UPDATE_TIMEOUT_MS = 8000;
+
+    function validVersion(value) {
+        return typeof value === "string" && /^\d{1,5}(\.\d{1,5}){0,3}$/.test(value)
+            && value.split(".").every(part => Number(part) <= 65535);
+    }
 
     function versionParts(value) {
         return String(value || "")
@@ -392,36 +401,54 @@
         return false;
     }
 
-    function checkExtensionUpdate() {
-        let lastCheckedAt = 0;
-        try {
-            lastCheckedAt = Number(window.localStorage.getItem(UPDATE_CHECK_KEY) || 0);
-        } catch (error) {}
-        const now = Date.now();
-        if (now - lastCheckedAt < UPDATE_CHECK_TTL) return;
+    async function checkExtensionUpdate() {
+        if (updateCheckPending) return;
         let currentVersion = "";
         try {
             currentVersion = chrome.runtime.getManifest().version;
-            window.localStorage.setItem(UPDATE_CHECK_KEY, String(now));
         } catch (error) {
             return;
         }
-        const attempt = index => {
-            if (index >= UPDATE_VERSION_MIRRORS.length) return;
-            const url = UPDATE_VERSION_MIRRORS[index] + (UPDATE_VERSION_MIRRORS[index].includes("?") ? "&" : "?") + "_t=" + now;
-            fetch(url, { cache: "no-store", credentials: "omit" })
-                .then(response => (response.ok ? response.json() : null))
-                .then(payload => {
-                    if (!payload || !payload.version) {
-                        attempt(index + 1);
-                        return;
-                    }
-                    if (!isNewerVersion(payload.version, currentVersion)) return;
-                    showUpdateBanner("插件有新版本 v" + payload.version + "（当前 v" + currentVersion + "），请下载后在扩展管理页重新加载。");
-                })
-                .catch(() => attempt(index + 1));
-        };
-        attempt(0);
+        updateCheckPending = true;
+        try {
+            // 扩展存储不受商家页面禁用 localStorage 影响，并跨页面保留升级提醒。
+            const stored = await storageGet("local", [UPDATE_CHECK_KEY]);
+            const cached = stored[UPDATE_CHECK_KEY] || {};
+            const now = Date.now();
+            const notice = version => {
+                if (validVersion(version) && isNewerVersion(version, currentVersion)) {
+                    showUpdateBanner("插件有新版本 v" + version + "（当前 v" + currentVersion + "），请下载后在扩展管理页重新加载。");
+                }
+            };
+            notice(cached.version);
+            const checkedAge = now - Number(cached.checkedAt || 0);
+            if (validVersion(cached.version) && checkedAge >= 0 && checkedAge < UPDATE_CHECK_TTL) return;
+            const attemptedAge = now - Number(cached.attemptedAt || 0);
+            if (attemptedAge >= 0 && attemptedAge < UPDATE_RETRY_TTL) return;
+            await storageSet("local", { [UPDATE_CHECK_KEY]: { ...cached, attemptedAt: now } });
+            for (const mirror of UPDATE_VERSION_MIRRORS) {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
+                try {
+                    const response = await fetch(mirror + "?_t=" + now, {
+                        cache: "no-store", credentials: "omit", signal: controller.signal
+                    });
+                    const payload = response.ok ? await response.json() : null;
+                    if (!payload || !validVersion(payload.version)) continue;
+                    const version = validVersion(cached.version) && isNewerVersion(cached.version, payload.version)
+                        ? cached.version : payload.version;
+                    await storageSet("local", { [UPDATE_CHECK_KEY]: { version, checkedAt: Date.now(), attemptedAt: now } });
+                    notice(version);
+                    return;
+                } catch (error) {
+                    // 超时或暂时离线时继续镜像；全部失败后只冷却五分钟。
+                } finally {
+                    clearTimeout(timer);
+                }
+            }
+        } finally {
+            updateCheckPending = false;
+        }
     }
 
     if (document.readyState === "loading") {
