@@ -10,15 +10,8 @@
     const PANEL_ID = "cj-goods-side-panel-root";
     // 广告位（资源推荐 / 1元礼品代发 / 真实快递代发 / 查降权旺旺号 等）由后台配置，
     // 必须原样展示，所以不再列入移除清单。
-    const REMOVED_ITEM_LABELS = new Set([
-        "充值入口"
-    ]);
+    const REMOVED_ITEM_LABELS = new Set();
     const BUYER_SHOW_PATCH_EVENT = "qq1000-buyershow-download-start";
-    const DEFAULT_AD = {
-        label: "QQ1000.AI",
-        url: "https://tu.qq1000.com",
-        subtitle: "tu.qq1000.com"
-    };
 
     if (window.__QQ1000_UI_OVERRIDES_INSTALLED__) return;
     window.__QQ1000_UI_OVERRIDES_INSTALLED__ = true;
@@ -39,7 +32,9 @@
         markPanelsReady();
     }, 1500);
 
-    let adConfig = { ...DEFAULT_AD };
+    let adConfig = null;
+    const failedAdImages = new Map();
+    const shownPopupKeys = new Set();
     // 最近一次的广告位数据：面板重新渲染后要靠它把搬家面板的两条推广入口再贴一次
     let lastAdsByPlacement = {};
     let applyTimer = null;
@@ -49,6 +44,8 @@
     let portalFetchedAt = 0;
     let portalSignature = "";
     let portalInflight = null;
+    let portalReloadRequested = false;
+    let portalSessionGeneration = 0;
 
     function installStyle() {
         if (document.getElementById("qq1000-ui-overrides")) return;
@@ -110,6 +107,17 @@ html body #cj-goods-side-panel-root .cj-hd-brand-sub {
 html body #cj-goods-side-panel-root .cj-gm-entry--xingtu {
     cursor: pointer !important;
 }
+html body #cj-goods-side-panel-root .cj-gm-entry--xingtu:not([data-qq1000-ad-visible="1"]),
+html body [data-qq1000-move-ad-entry]:not([data-qq1000-ad-visible="1"]) {
+    display: none !important;
+}
+html body :is(#cj-goods-side-panel-root, #gg-top, .cj-top-bg, .cj-top) .h-00-col2:not([data-qq1000-ad-visible="1"]) {
+    display: none !important;
+}
+html body .qq1000-sidebar-ad-image { max-width: 100%; max-height: 56px; object-fit: contain; }
+html body .qq1000-toolbar-ad-image { max-width: 140px; max-height: 28px; object-fit: contain; }
+html body .qq1000-banner-ad-image { max-width: 100%; max-height: 120px; object-fit: contain; }
+html body .qq1000-ad-badge { display: inline-block; margin-left: 4px; padding: 0 3px; border-radius: 3px; color: #667085; background: #f2f4f7; font-size: 10px; line-height: 15px; white-space: nowrap; }
 html body #cj-goods-side-panel-root .cj-gm-entry--xingtu .menu-content {
     min-width: 0 !important;
     overflow: hidden !important;
@@ -354,8 +362,10 @@ html body .qq1000-tools-row .cj-btn-shu {
     function openAd(event) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        const active = normalizeAd(adConfig, "sidebar");
+        if (!active) return;
         const anchor = document.createElement("a");
-        anchor.href = adConfig.url;
+        anchor.href = active.linkUrl;
         anchor.target = "_blank";
         anchor.rel = "noopener noreferrer";
         anchor.style.display = "none";
@@ -370,13 +380,36 @@ html body .qq1000-tools-row .cj-btn-shu {
     }
 
     function applyAd(entry) {
+        const ad = normalizeAd(adConfig, "sidebar");
+        entry.hidden = !ad;
+        entry.setAttribute("data-qq1000-ad-visible", ad ? "1" : "0");
+        if (!ad) {
+            entry.style.setProperty("display", "none", "important");
+            entry.removeAttribute("data-qq1000-ai-url");
+            const pendingImage = entry.querySelector(".qq1000-sidebar-ad-image");
+            if (pendingImage) pendingImage.remove();
+            return;
+        }
+        entry.style.removeProperty("display");
         const title = entry.querySelector(".menu-title");
         const subtitle = entry.querySelector(".cj-xingtu-sub");
-        if (title && title.textContent !== adConfig.label) title.textContent = adConfig.label;
-        if (subtitle && subtitle.textContent !== adConfig.subtitle) subtitle.textContent = adConfig.subtitle;
-        entry.setAttribute("data-qq1000-ai-url", adConfig.url);
-        entry.setAttribute("title", "打开 " + adConfig.label);
-        entry.setAttribute("aria-label", "打开 " + adConfig.label);
+        const label = ad.title || ad.subtitle || ad.content;
+        if (title) title.textContent = label;
+        if (subtitle) subtitle.textContent = ad.title ? (ad.subtitle || ad.content) : "";
+        applyAdBadge(entry, ad);
+        const originalIcon = entry.querySelector(".menu-icon-wrapper");
+        if (originalIcon) originalIcon.style.setProperty("display", "none", "important");
+        let image = entry.querySelector(".qq1000-sidebar-ad-image");
+        if (image && image.dataset.qq1000AdImageOwner !== adKey(ad)) { image.remove(); image = null; }
+        if (ad.imageUrl) {
+            if (!image) { image = document.createElement("img"); image.className = "qq1000-sidebar-ad-image"; entry.insertBefore(image, entry.firstChild); }
+            if (image.src !== ad.imageUrl) image.src = ad.imageUrl;
+            image.alt = "";
+            watchAdImage(image, ad, entry, "sidebar");
+        } else if (image) image.remove();
+        entry.setAttribute("data-qq1000-ai-url", ad.linkUrl);
+        entry.setAttribute("title", label || "广告");
+        entry.setAttribute("aria-label", label || "广告");
         entry.setAttribute("role", "link");
         entry.setAttribute("tabindex", "0");
         if (entry.dataset.qq1000AiBound === "1") return;
@@ -439,6 +472,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         if (!root || typeof root.querySelectorAll !== "function") return;
         root.querySelectorAll("*").forEach(element => {
             if (!element.parentElement) return;
+            if (element.closest("[data-qq1000-ad-visible], [data-qq1000-ad-rendered]")) return;
             const label = normalizeText(element.textContent);
             if (!REMOVED_ITEM_LABELS.has(label) && label !== "客服" && label !== "联系客服") return;
             removeNode(findRemovalTarget(element, root));
@@ -556,6 +590,7 @@ html body .qq1000-tools-row .cj-btn-shu {
             TOOL_BUTTON_CLASSES.forEach(className => {
                 root.querySelectorAll("." + className).forEach(button => {
                     if (seen.has(button)) return;
+                    if (button.closest(".h-00-col2, [data-qq1000-ad-placement], [data-qq1000-ad-visible], [data-qq1000-ad-rendered]")) return;
                     if (button.closest("[" + TOOLS_ATTR + "]")) return;
                     if (!inToolbarRegion(button)) return;
                     const label = toolLabelOf(button);
@@ -779,6 +814,7 @@ html body .qq1000-tools-row .cj-btn-shu {
             // 统计格：按元素自身的直接文本定位（类名、子元素都不可靠）
             root.querySelectorAll("div, span, p, td, li").forEach(node => {
                 if (!node.parentElement || node.closest("[" + TOOLS_ATTR + "]")) return;
+                if (node.closest("[data-qq1000-ad-visible], [data-qq1000-ad-rendered]")) return;
                 if (!matchesRemovedStat(directTextOf(node))) return;
                 removeNode(statCellOf(node, root));
             });
@@ -819,6 +855,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         const pluginOwned = /^(cj-|jc-|gg-|qq1000-|h-00|plugin-name)/;
         document.querySelectorAll("div, span").forEach(node => {
             if (!node.parentElement) return;
+            if (node.closest("[data-qq1000-ad-visible], [data-qq1000-ad-rendered]")) return;
             if (!matchesRemovedStat(directTextOf(node))) return;
             let cursor = node;
             let owned = false;
@@ -844,6 +881,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         roots.forEach(root => {
             root.querySelectorAll("div, span, li, a, button").forEach(element => {
                 if (!element.parentElement) return;
+                if (element.closest("[data-qq1000-ad-visible], [data-qq1000-ad-rendered]")) return;
                 const label = normalizeText(element.textContent);
                 if (!label || label.length > 40) return;
                 const matched = REMOVED_FEATURE_LABELS.has(label) ||
@@ -993,6 +1031,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         });
         const bar = document.querySelector(".h-00-col2");
         if (!bar) return;
+        if (bar.querySelector("[data-qq1000-ad-rendered]")) return;
         if (bar.querySelector(".h-00-col2-text.gg-text-xhx")) return;
         if (normalizeText(bar.textContent)) return;
         bar.style.display = "none";   // 没有内容就别留一条空白蓝条
@@ -1017,11 +1056,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         buildToolGroups();
         // 顶部广告栏（.h-00-col2 / #gg-top，内容 资源推荐、1元礼品代发、真实快递代发、
         // 查降权旺旺号…）由后台配置，用户要求在面板上原样展示，这里不再整栏移除。
-        document.querySelectorAll(".lm2-feat-title").forEach(title => {
-            const label = normalizeText(title.textContent);
-            if (label !== "礼品代发" && label !== "查降权号" && label !== "查降权旺旺号") return;
-            removeNode(findAncestorByClass(title, "lm2-feat") || title);
-        });
+        // 登录面板内的功能介绍/业务入口不属于广告位，广告只由专用挂载点控制。
         removeCustomerServiceUi();
 
         const roots = [];
@@ -1080,9 +1115,8 @@ html body .qq1000-tools-row .cj-btn-shu {
     // 插件顶栏标题的兜底值（正常应由 tools/config/new2025 的 pluginName 下发）。
     const PLUGIN_BRAND_NAME = "QQ1000电商";
     // 用户中心里要下线的 Tab（按文案匹配，避免企业子账号被 visibleTabs 过滤后序号错位）。
-    // 「功能导航」**不能删**：那里面是打开商品搬家 / 淘宝详情分析 / 生意参谋助手 /
-    // 直通车助手这些功能面板的入口卡片，删掉 Tab 就等于把这些功能整个藏起来。
-    const HIDDEN_TAB_LABELS = ["会员订购"];
+    // 用户已明确下线“功能导航”；兼容尚在缓存中的旧模块，同样不再显示入口。
+    const HIDDEN_TAB_LABELS = ["会员订购", "功能导航"];
 
     /**
      * 把要下线的 Tab **直接从 DOM 移除**（不是 display:none 隐藏）。
@@ -1185,10 +1219,10 @@ html body .qq1000-tools-row .cj-btn-shu {
         const panel = document.getElementById(PANEL_ID);
         const buyerShowDialog = document.querySelector(".buyer-show-dialog");
         removeUnwantedPluginUi(panel);
+        renderCurrentAds();
         if (panel || buyerShowDialog) installStyle();
-        if (panel) {
+        if (panel || document.getElementById("gg-top")) {
             loadOnlinePortalConfig();
-            panel.querySelectorAll(".cj-gm-entry--xingtu").forEach(applyAd);
         }
         applyBuyerShowUiFixes();
         // 用户中心（弹窗）里的三处定制
@@ -1237,8 +1271,142 @@ html body .qq1000-tools-row .cj-btn-shu {
 
     function absoluteUrl(url) {
         const value = String(url || "").trim();
-        if (!value) return API_HOST;
-        return /^https?:\/\//i.test(value) ? value : `${API_HOST}${value.startsWith("/") ? "" : "/"}${value}`;
+        if (!value || /[\\\s\x00-\x1f\x7f]/.test(value)) return "";
+        if (!/^https?:\/\//i.test(value) && !(value.startsWith("/") && !value.startsWith("//"))) return "";
+        try {
+            const target = new URL(value, API_HOST);
+            return /^https?:$/.test(target.protocol) && !target.username && !target.password ? target.href : "";
+        } catch (error) { return ""; }
+    }
+
+    function adBoolean(value, fallback = false) {
+        if (value === undefined || value === null || value === "") return fallback;
+        return value === true || value === 1 || /^(true|1|yes|on)$/i.test(String(value).trim());
+    }
+
+    function adTimestamp(value) {
+        if (value === undefined || value === null || value === "") return null;
+        if (typeof value === "number" || /^\d+$/.test(String(value))) {
+            const number = Number(value);
+            return Number.isSafeInteger(number) && number >= 0 ? number : NaN;
+        }
+        return NaN;
+    }
+
+    function normalizeAd(raw, placement) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+        const text = value => typeof value === "string" ? value.trim() : "";
+        const id = text(raw.id);
+        if (!id || !adBoolean(raw.enabled)) return null;
+        if (String(raw.pluginId ?? raw.plugin_id ?? "").trim()) return null;
+        if (raw.placement && raw.placement !== placement) return null;
+        const startAt = adTimestamp(raw.startAt ?? raw.start_at);
+        const endAt = adTimestamp(raw.endAt ?? raw.end_at);
+        const now = Date.now() / 1000;
+        if ((startAt !== null && !Number.isFinite(startAt)) || (endAt !== null && !Number.isFinite(endAt)) ||
+            (startAt !== null && startAt > now) || (endAt !== null && endAt <= now) ||
+            (startAt !== null && endAt !== null && endAt <= startAt)) return null;
+        const showTitle = adBoolean(raw.showTitle ?? raw.show_title, true);
+        const showSubtitle = adBoolean(raw.showSubtitle ?? raw.show_subtitle, true);
+        const title = showTitle ? text(raw.title) : "";
+        const subtitle = showSubtitle ? text(raw.subtitle) : "";
+        const content = showSubtitle ? text(raw.content) : "";
+        const rawImageUrl = raw.imageUrl ?? raw.image_url;
+        const rawLinkUrl = raw.linkUrl ?? raw.link_url;
+        const supplied = value => value !== undefined && value !== null && (typeof value !== "string" || value.trim() !== "");
+        let imageUrl = absoluteUrl(rawImageUrl);
+        const linkUrl = absoluteUrl(rawLinkUrl);
+        if ((supplied(rawImageUrl) && !imageUrl) || (supplied(rawLinkUrl) && !linkUrl)) return null;
+        if (imageUrl && failedAdImages.has(imageUrl)) {
+            const elapsed = Date.now() - failedAdImages.get(imageUrl);
+            if (elapsed >= 0 && elapsed < 5 * 60 * 1000) imageUrl = "";
+            else failedAdImages.delete(imageUrl);
+        }
+        if (!title && !subtitle && !content && !imageUrl) return null;
+        if (["sidebar", "tb_panel", "move_panel"].includes(placement) && !linkUrl) return null;
+        return { id, enabled: true, placement, title, subtitle, content, imageUrl, linkUrl,
+            buttonText: text(raw.buttonText ?? raw.button_text), startAt, endAt,
+            showTitle, showSubtitle, showAdLabel: adBoolean(raw.showAdLabel ?? raw.show_ad_label),
+            updatedAt: raw.updatedAt ?? raw.updated_at ?? 0 };
+    }
+
+    function adsForPlacement(ads, placement) {
+        const rows = ads && ads[placement];
+        return Array.isArray(rows) ? rows.map(row => normalizeAd(row, placement)).filter(Boolean) : [];
+    }
+
+    function adSignature(ad) {
+        return ad ? JSON.stringify(ad) : "";
+    }
+
+    function adKey(ad) {
+        let hash = 2166136261;
+        for (const char of adSignature(ad)) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+        return `${ad.id}:${ad.updatedAt}:${hash >>> 0}`;
+    }
+
+    function applyAdBadge(container, ad) {
+        let badge = container.querySelector(".qq1000-ad-badge");
+        if (!ad.showAdLabel) {
+            if (badge) badge.remove();
+            return;
+        }
+        if (!badge) { badge = document.createElement("span"); badge.className = "qq1000-ad-badge"; container.appendChild(badge); }
+        badge.textContent = "广告";
+    }
+
+    function watchAdImage(image, ad, container, placement, onVisible) {
+        image.__qq1000AdContext = { ad, container, placement, onVisible };
+        image.dataset.qq1000AdImageOwner = adKey(ad);
+        if (image.dataset.qq1000AdImageSrc !== ad.imageUrl) {
+            image.dataset.qq1000AdImageSrc = ad.imageUrl;
+            image.dataset.qq1000AdImageLoaded = "0";
+        }
+        image.hidden = image.dataset.qq1000AdImageLoaded !== "1";
+        if (image.hidden && !ad.title && !ad.subtitle && !ad.content) {
+            container.hidden = true;
+            container.style.setProperty("display", "none", "important");
+        }
+        if (image.dataset.qq1000AdImageBound === "1") return;
+        image.dataset.qq1000AdImageBound = "1";
+        image.addEventListener("load", () => {
+            const current = image.__qq1000AdContext;
+            if (!image.isConnected || !current.container.contains(image)) return;
+            failedAdImages.delete(current.ad.imageUrl);
+            if (!normalizeAd(current.ad, current.placement)) return;
+            image.dataset.qq1000AdImageLoaded = "1";
+            image.hidden = false;
+            if (!current.ad.title && !current.ad.subtitle && !current.ad.content) {
+                current.container.hidden = false;
+                current.container.style.removeProperty("display");
+                current.container.setAttribute("data-qq1000-ad-visible", "1");
+            }
+            const parent = current.container.parentElement;
+            if (parent && parent.getAttribute("data-qq1000-ad-placement") === "tb_panel") {
+                parent.hidden = false;
+                parent.style.removeProperty("display");
+                parent.setAttribute("data-qq1000-ad-visible", "1");
+            }
+            if (current.onVisible) current.onVisible();
+        });
+        image.addEventListener("error", () => {
+            const current = image.__qq1000AdContext;
+            if (!image.isConnected || !current.container.contains(image)) return;
+            failedAdImages.set(current.ad.imageUrl, Date.now());
+            image.remove();
+            if (!current.ad.title && !current.ad.subtitle && !current.ad.content) {
+                current.container.hidden = true;
+                current.container.style.setProperty("display", "none", "important");
+                current.container.setAttribute("data-qq1000-ad-visible", "0");
+            }
+            const parent = current.container.parentElement;
+            if (parent && parent.getAttribute("data-qq1000-ad-placement") === "tb_panel" &&
+                !Array.from(parent.children).some(node => !node.hidden && node.style.display !== "none")) {
+                parent.hidden = true;
+                parent.style.setProperty("display", "none", "important");
+                parent.setAttribute("data-qq1000-ad-visible", "0");
+            }
+        });
     }
 
     function openLink(url, event) {
@@ -1247,6 +1415,7 @@ html body .qq1000-tools-row .cj-btn-shu {
             event.stopImmediatePropagation();
         }
         const target = absoluteUrl(url);
+        if (!target) return;
         const anchor = document.createElement("a");
         anchor.href = target;
         anchor.target = "_blank";
@@ -1258,12 +1427,12 @@ html body .qq1000-tools-row .cj-btn-shu {
     }
 
     function pickAd(adsByPlacement, placement) {
-        const rows = adsByPlacement && adsByPlacement[placement];
-        return Array.isArray(rows) && rows.length ? rows[0] : null;
+        return adsForPlacement(adsByPlacement, placement)[0] || null;
     }
 
     /** 面板顶部横幅广告（后台 placement=banner）。 */
     function injectBannerAd(ad) {
+        ad = normalizeAd(ad, "banner");
         const panel = document.getElementById(PANEL_ID) || document.getElementById("gg-top");
         if (!panel) return;
         const existing = document.getElementById(AD_BANNER_ID);
@@ -1274,7 +1443,9 @@ html body .qq1000-tools-row .cj-btn-shu {
         // 关闭状态挂在「广告 id + 更新时间」上：后台改了内容就等于一条新广告，
         // 用户之前关掉过，也不该把新版一起吞掉。
         const version = ad.updatedAt || 0;
-        const dismissKey = `qq1000:ad:dismiss:${ad.id}:${version}`;
+        const signature = adSignature(ad);
+        if (existing && existing.dataset.adSignature === signature) return;
+        const dismissKey = `qq1000:ad:dismiss:${adKey(ad)}`;
         try {
             // 旧版是按「广告 id」记录关闭状态的，会让人换完新广告仍然看不到——
             // 直接清掉这个历史 key，避免广告被永久吞掉。
@@ -1286,7 +1457,11 @@ html body .qq1000-tools-row .cj-btn-shu {
         } catch (error) {}
         const banner = existing || document.createElement("div");
         banner.id = AD_BANNER_ID;
+        banner.setAttribute("data-qq1000-ad-visible", "1");
+        banner.hidden = false;
+        banner.style.removeProperty("display");
         banner.dataset.adVersion = String(version);
+        banner.dataset.adSignature = signature;
         banner.innerHTML = `
 <button type="button" class="qq1000-ad-close" aria-label="关闭广告">×</button>
 <div class="qq1000-ad-main">
@@ -1295,15 +1470,25 @@ html body .qq1000-tools-row .cj-btn-shu {
         <span class="qq1000-ad-title"></span>
     </div>
     <span class="qq1000-ad-sub"></span>
+    <img class="qq1000-banner-ad-image" alt="">
 </div>
 <div class="qq1000-ad-actions">
     <button type="button" class="qq1000-ad-go"></button>
 </div>`;
         banner.querySelector(".qq1000-ad-title").textContent = ad.title || "";
         banner.querySelector(".qq1000-ad-sub").textContent = ad.subtitle || ad.content || "";
+        applyAdBadge(banner, ad);
+        const image = banner.querySelector(".qq1000-banner-ad-image");
+        if (ad.imageUrl) { image.src = ad.imageUrl; watchAdImage(image, ad, banner, "banner"); }
+        else image.remove();
         const go = banner.querySelector(".qq1000-ad-go");
-        go.textContent = ad.buttonText || "查看";
-        go.addEventListener("click", event => openLink(ad.linkUrl, event), true);
+        if (ad.linkUrl && ad.buttonText) {
+            go.textContent = ad.buttonText;
+            go.addEventListener("click", event => openLink(ad.linkUrl, event), true);
+        } else {
+            go.remove();
+            banner.querySelector(".qq1000-ad-actions").remove();
+        }
         banner.querySelector(".qq1000-ad-close").addEventListener("click", event => {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -1315,93 +1500,116 @@ html body .qq1000-tools-row .cj-btn-shu {
 
     /** 站内弹窗广告（后台 placement=popup），每个广告每天最多弹一次。 */
     function showPopupAd(ad) {
-        if (!ad || !document.body) return;
-        if (document.getElementById(AD_POPUP_ID)) return;
+        ad = normalizeAd(ad, "popup");
+        const existing = document.getElementById(AD_POPUP_ID);
+        if (!ad || !document.body) {
+            if (existing) existing.remove();
+            return;
+        }
+        const signature = adSignature(ad);
+        if (existing && existing.dataset.adSignature === signature) return;
+        if (existing) existing.remove();
         let seen = {};
         const today = new Date().toISOString().slice(0, 10);
-        const seenKey = `${ad.id}:${ad.updatedAt || 0}`;
+        const seenKey = adKey(ad);
+        if (shownPopupKeys.has(`${today}:${seenKey}`)) return;
         try {
             seen = JSON.parse(window.localStorage.getItem("qq1000:ad:seen") || "{}");
+            if (!seen || typeof seen !== "object" || Array.isArray(seen)) seen = {};
             if (seen[seenKey] === today) return;
-            seen[seenKey] = today;
-            window.localStorage.setItem("qq1000:ad:seen", JSON.stringify(seen));
         } catch (error) {}
+        const markShown = () => {
+            const day = new Date().toISOString().slice(0, 10);
+            shownPopupKeys.add(`${day}:${seenKey}`);
+            try {
+                const cached = JSON.parse(window.localStorage.getItem("qq1000:ad:seen") || "{}");
+                const values = cached && typeof cached === "object" && !Array.isArray(cached) ? cached : {};
+                values[seenKey] = day;
+                window.localStorage.setItem("qq1000:ad:seen", JSON.stringify(values));
+            } catch (error) {}
+        };
         const node = document.createElement("div");
         node.id = AD_POPUP_ID;
+        node.setAttribute("data-qq1000-ad-visible", "1");
+        node.dataset.adSignature = signature;
         node.innerHTML = `
 <div class="qq1000-ad-popup-card" role="dialog" aria-label="活动">
     <button type="button" class="qq1000-ad-close" aria-label="关闭">×</button>
     <div class="qq1000-ad-popup-title"></div>
     <div class="qq1000-ad-popup-body"></div>
     <img class="qq1000-ad-popup-img" alt="">
-    <button type="button" class="qq1000-ad-go">查看</button>
+    <button type="button" class="qq1000-ad-go"></button>
 </div>`;
         node.querySelector(".qq1000-ad-popup-title").textContent = ad.title || "";
         node.querySelector(".qq1000-ad-popup-body").textContent = ad.content || ad.subtitle || "";
+        applyAdBadge(node, ad);
         const img = node.querySelector(".qq1000-ad-popup-img");
         if (ad.imageUrl) {
             img.src = ad.imageUrl;
+            watchAdImage(img, ad, node, "popup", !ad.title && !ad.subtitle && !ad.content ? markShown : undefined);
         } else {
             img.remove();
         }
-        node.querySelector(".qq1000-ad-go").textContent = ad.buttonText || "立即查看";
-        node.querySelector(".qq1000-ad-go").addEventListener("click", event => openLink(ad.linkUrl, event), true);
+        const go = node.querySelector(".qq1000-ad-go");
+        if (ad.linkUrl && ad.buttonText) {
+            go.textContent = ad.buttonText;
+            go.addEventListener("click", event => openLink(ad.linkUrl, event), true);
+        } else go.remove();
         node.querySelector(".qq1000-ad-close").addEventListener("click", event => {
             event.preventDefault();
             event.stopImmediatePropagation();
             node.remove();
         }, true);
         document.body.appendChild(node);
+        if (ad.title || ad.subtitle || ad.content) markShown();
     }
 
     /** 门户配置的「内容签名」—— 只有它变了才重渲染，避免每次刷新都闪一下。 */
     function portalSignatureOf(data) {
-        const ads = (data && data.adsByPlacement) || {};
-        const branding = (data && data.branding) || {};
-        const parts = [`v${(data && data.adsVersion) || 0}`];
-        ["banner", "popup", "sidebar", "vip"].forEach(placement => {
-            const rows = ads[placement] || [];
-            const first = rows[0] || {};
-            parts.push(`${placement}:${first.id || ""}:${first.updatedAt || ""}:${first.title || ""}:${first.subtitle || ""}`);
-        });
-        parts.push(`brand:${branding.aiLabel || ""}:${branding.aiSubtitle || ""}:${branding.aiUrl || ""}`);
-        return parts.join("|");
+        const ads = data && data.adsByPlacement || {};
+        // 尚未开始的配置也必须参与签名，否则后台删除后旧缓存会在开始时间重新显示。
+        return JSON.stringify([data && data.loggedIn, data && data.runtime && data.runtime.enabled,
+            ...["banner", "popup", "sidebar", "tb_panel", "move_panel"].map(placement => [placement, Array.isArray(ads[placement]) ? ads[placement] : []])]);
     }
 
-    /**
-     * 面板顶栏那条蓝色广告位（插件里写死的「资源推荐 / 1元礼品代发 / 真实快递代发 /
-     * 查降权旺旺号」）改成由后台广告位驱动：
-     *   - 后台「插件管理 → 广告位」里配置 banner（没有 banner 就用专属的 tb_panel）位置的广告，
-     *     这里按后台条目渲染成同样的胶囊，点击打开后台填的 linkUrl；
-     *   - 后台没配就什么都不做，保留插件原有的条目（不会把广告条弄空）。
-     */
+    /** 顶栏只渲染有效的 tb_panel 配置；空配置清空并折叠挂载点。 */
     function renderPanelAdBar(ads) {
-        const bar = document.querySelector(".h-00-col2");
-        if (!bar) return;
         // 只认这个位置自己的广告（tb_panel，后台「投放位置」里选「淘宝面板顶栏」）。不用 banner 兜底：
         // banner 是面板顶部横幅那一条，混进来就会出现「后台没配置也显示」。
         // 插件自带的那几条一律摘掉：后台没配置就整条不显示。
-        const rows = (ads && ads.tb_panel) || [];
-        const list = Array.isArray(rows) ? rows.filter(ad => String(ad.title || ad.subtitle || "").trim()) : [];
-        const signature = JSON.stringify(list.map(ad => [ad.title, ad.subtitle, ad.linkUrl, ad.updatedAt]));
-        if (bar.dataset.qq1000AdSignature === signature) return;
+        const list = adsForPlacement(ads, "tb_panel");
+        const signature = JSON.stringify(list);
+        document.querySelectorAll("#cj-goods-side-panel-root .h-00-col2, #gg-top .h-00-col2, .cj-top-bg .h-00-col2, .cj-top .h-00-col2").forEach(bar => {
+        if (bar.dataset.qq1000AdSignature === signature && bar.querySelectorAll("[data-qq1000-ad-rendered]").length === list.length) return;
         bar.dataset.qq1000AdSignature = signature;
+        bar.setAttribute("data-qq1000-ad-placement", "tb_panel");
         bar.textContent = "";
-        bar.style.display = list.length ? "" : "none";
+        bar.hidden = !list.some(ad => ad.title || ad.subtitle || ad.content);
+        bar.setAttribute("data-qq1000-ad-visible", bar.hidden ? "0" : "1");
+        bar.style.display = bar.hidden ? "none" : "";
         list.forEach(ad => {
-            const label = String(ad.title || ad.subtitle || "").trim();
-            if (!label) return;
+            const label = ad.title || ad.subtitle || ad.content;
             const chip = document.createElement("div");
             chip.className = "h-00-col2-text gg-text-xhx";
             chip.setAttribute("data-qq1000-ad-rendered", "1");
             chip.textContent = label;
-            const url = String(ad.linkUrl || "").trim();
+            applyAdBadge(chip, ad);
+            if (ad.imageUrl) {
+                const image = document.createElement("img");
+                image.className = "qq1000-toolbar-ad-image";
+                image.src = ad.imageUrl;
+                image.alt = "";
+                chip.appendChild(image);
+                watchAdImage(image, ad, chip, "tb_panel");
+            }
+            const url = ad.linkUrl;
             if (url) {
                 chip.style.cursor = "pointer";
                 chip.title = url;
                 chip.addEventListener("click", event => openLink(url, event));
             }
             bar.appendChild(chip);
+        });
         });
     }
 
@@ -1410,7 +1618,7 @@ html body .qq1000-tools-row .cj-btn-shu {
      * placement = ``move_panel``，每条广告一个入口，互不影响。
      *   - 按标题关键词归位（含「礼品/代发」的进礼品代发位，含「降权」的进查降权位），
      *     其余按后台顺序补位；
-     *   - 后台没配置这个位置时不动，保留插件原来的条目；
+     *   - 后台没配置这个位置时隐藏整个入口，并清除原跳转；
      *   - 只配了一条时，另一个入口下线（这样「单独配置」才真的可控）。
      * 节点定位沿用「自身直接文本 + 插件类名前缀」的方式，不依赖具体类名。
      */
@@ -1426,6 +1634,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         const found = [];
         document.querySelectorAll("div, span, a, li, p").forEach(node => {
             if (!node.parentElement || node.closest("[data-qq1000-tools]")) return;
+            if (node.closest("[data-qq1000-ad-visible], [data-qq1000-ad-rendered]")) return;
             if (normalizeText(directTextOf(node)) !== label) return;
             let cursor = node;
             let depth = 0;
@@ -1443,9 +1652,8 @@ html body .qq1000-tools-row .cj-btn-shu {
 
     function applyMovePanelAds(ads) {
         // 搬家的两个入口只认 move_panel（后台选「搬家面板入口」），与顶部广告条互不串用。
-        const source = (ads && ads.move_panel) || [];
-        const rows = Array.isArray(source) ? source.slice() : [];
-        // 后台没配置：插件自带的这两个入口一并彻底移除（用户要求：后台没设置就不要显示）
+        const rows = adsForPlacement(ads, "move_panel").slice();
+        // 两个推广挂载点可重新启用；未配置时不占布局，不显示默认内容。
         const assigned = [];
         MOVE_AD_SLOTS.forEach(slot => {
             const hit = rows.find(row => !assigned.includes(row) && slot.match.test(String(row.title || "")));
@@ -1460,74 +1668,71 @@ html body .qq1000-tools-row .cj-btn-shu {
             const node = directLabelNode(slot.label);
             if (!node) return;
             node.dataset.qq1000MoveAdSlot = slot.label;
+            const entry = node.closest(".cj-gm-entry") || node.closest("[data-qq1000-move-ad-entry]") ||
+                node.parentElement?.closest("li, a, [class*='entry'], [class*='item']") || node.parentElement;
+            if (!entry) return;
+            entry.setAttribute("data-qq1000-move-ad-entry", slot.label);
+            entry.setAttribute("data-qq1000-ad-visible", slot.ad ? "1" : "0");
+            entry.hidden = !slot.ad;
+            entry.dataset.qq1000AdUrl = slot.ad ? slot.ad.linkUrl : "";
+            if (entry.dataset.qq1000AdBound !== "1") {
+                entry.dataset.qq1000AdBound = "1";
+                entry.addEventListener("click", event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation();
+                    const active = normalizeAd(slot.ad, "move_panel");
+                    if (active) openLink(active.linkUrl, event);
+                }, true);
+            }
             if (!slot.ad) {
-                // 摘「整行」：图标与文字在同一行里，只删文字会留下孤零零的图标。
-                // 向上走，只要祖先的文本仍等于这个标签（图标不带文字），就再往上一层。
-                let row = node;
-                let up = node.parentElement;
-                let guard = 0;
-                while (up && guard < 3) {
-                    if (normalizeText(up.textContent) !== slot.label) break;
-                    row = up;
-                    up = up.parentElement;
-                    guard += 1;
-                }
-                removeNode(row);
+                // 保留不可见挂载点，以便后台稍后新增配置时恢复，不残留旧跳转。
+                entry.style.setProperty("display", "none", "important");
+                const pendingImage = entry.querySelector(".qq1000-sidebar-ad-image");
+                if (pendingImage) pendingImage.remove();
                 return;
             }
-            const title = String(slot.ad.title || "").trim();
-            if (title && normalizeText(node.textContent) !== title) node.textContent = title;
-            const url = String(slot.ad.linkUrl || "").trim();
-            if (!url) return;
-            const entry = node.closest("li, a, [class*='entry'], [class*='menu'], [class*='item']") || node.parentElement;
-            if (!entry || entry.dataset.qq1000AdUrl === url) return;
-            entry.dataset.qq1000AdUrl = url;
-            if (entry.dataset.qq1000AdBound === "1") return;
-            entry.dataset.qq1000AdBound = "1";
-            entry.addEventListener("click", event => {
-                // 拦掉插件自己的跳转，改跳后台配置的地址
-                event.preventDefault();
-                event.stopPropagation();
-                openLink(entry.dataset.qq1000AdUrl, event);
-            }, true);
+            entry.style.removeProperty("display");
+            node.textContent = slot.ad.title || slot.ad.subtitle || slot.ad.content;
+            applyAdBadge(entry, slot.ad);
+            const originalIcon = entry.querySelector(".menu-icon-wrapper");
+            if (originalIcon) originalIcon.style.setProperty("display", "none", "important");
+            let image = entry.querySelector(".qq1000-sidebar-ad-image");
+            if (image && image.dataset.qq1000AdImageOwner !== adKey(slot.ad)) { image.remove(); image = null; }
+            if (slot.ad.imageUrl) {
+                if (!image) { image = document.createElement("img"); image.className = "qq1000-sidebar-ad-image"; entry.insertBefore(image, entry.firstChild); }
+                if (image.src !== slot.ad.imageUrl) image.src = slot.ad.imageUrl;
+                image.alt = "";
+                watchAdImage(image, slot.ad, entry, "move_panel");
+            } else if (image) image.remove();
         });
     }
 
     /** 用最新一份门户配置重绘侧栏文案、顶部横幅与弹窗广告。 */
     function renderPortalConfig(data) {
-        const branding = data.branding || {};
-        const ads = data.adsByPlacement || {};
+        lastAdsByPlacement = data && data.loggedIn !== false && data.runtime?.enabled !== false
+            && data.adsByPlacement && typeof data.adsByPlacement === "object" ? data.adsByPlacement : {};
+        renderCurrentAds();
+    }
 
-        const sidebar = pickAd(ads, "sidebar") || pickAd(ads, "vip");
-        if (sidebar) {
-            if (sidebar.title) adConfig.label = sidebar.title;
-            if (sidebar.subtitle) adConfig.subtitle = sidebar.subtitle;
-            adConfig.url = absoluteUrl(sidebar.linkUrl || "/vip/plugin");
-        } else if (branding.aiUrl) {
-            if (branding.aiLabel) adConfig.label = branding.aiLabel;
-            if (branding.aiSubtitle) adConfig.subtitle = branding.aiSubtitle;
-            adConfig.url = absoluteUrl(branding.aiUrl);
-        }
-
-        try {
-            injectBannerAd(pickAd(ads, "banner"));
-            showPopupAd(pickAd(ads, "popup"));
-            renderPanelAdBar(ads);
-            lastAdsByPlacement = ads;
-            applyMovePanelAds(ads);
-        } catch (error) {}
+    function renderCurrentAds() {
+        adConfig = pickAd(lastAdsByPlacement, "sidebar");
+        document.querySelectorAll(".cj-gm-entry--xingtu").forEach(applyAd);
+        injectBannerAd(pickAd(lastAdsByPlacement, "banner"));
+        showPopupAd(pickAd(lastAdsByPlacement, "popup"));
+        renderPanelAdBar(lastAdsByPlacement);
+        applyMovePanelAds(lastAdsByPlacement);
     }
 
     /**
-     * 依次取线上「品牌 + 广告位」：
-     *  - 侧栏入口（.cj-gm-entry--xingtu）用 sidebar/vip 广告位，退化到品牌里的 AI 文案
+     * 获取并验证线上广告位：
+     *  - 侧栏入口（.cj-gm-entry--xingtu）只用 sidebar，不借用品牌或站点会员广告
      *  - 面板顶部横幅用 banner 广告位
      *  - 站内弹窗用 popup 广告位
-     * 未登录直接跳过（服务端本来也不给）。
+     * 未登录、请求失败或配置无效时清空已有广告。
      *
      * 后台改广告后插件必须尽快跟上，所以：
-     *  1. 每次请求带 `_t` cache-buster + `cache: no-store` —— tu.qq1000.com 走
-     *     Cloudflare，GET 会被边缘缓存 30 秒，只靠 no-store 不够；
+     *  1. 使用 POST/no-store 且禁止凭据重定向；
      *  2. 15 秒 TTL，防止 MutationObserver 高频触发把接口打爆；
      *  3. 内容签名变了才重渲染，否则会闪屏。
      */
@@ -1537,9 +1742,11 @@ html body .qq1000-tools-row .cj-btn-shu {
         if (!force) {
             if (now - portalFetchedAt < PORTAL_TTL) return Promise.resolve();
         }
+        const sessionGeneration = portalSessionGeneration;
         let requestToken = "";
         portalInflight = readUserToken()
             .then(token => {
+                if (sessionGeneration !== portalSessionGeneration) return null;
                 if (!token) return null;
                 requestToken = token;
                 const url = `${API_HOST}/plugin/api/index/getPluginFeatures?_t=${Date.now()}`;
@@ -1558,9 +1765,15 @@ html body .qq1000-tools-row .cj-btn-shu {
                     .finally(() => clearTimeout(timer));
             })
             .then(async payload => {
-                if (requestToken && requestToken !== await readUserToken()) return;
+                if (sessionGeneration !== portalSessionGeneration) return;
+                const currentToken = requestToken ? await readUserToken() : "";
+                if (sessionGeneration !== portalSessionGeneration || (requestToken && requestToken !== currentToken)) return;
                 portalFetchedAt = Date.now();
-                if (!payload || payload.state === false || Number(payload.code) !== 0) return;
+                if (!payload || payload.state === false || Number(payload.code) !== 0) {
+                    portalSignature = "";
+                    renderPortalConfig({ adsByPlacement: {} });
+                    return;
+                }
                 const data = payload.data || {};
                 const signature = portalSignatureOf(data);
                 if (signature !== portalSignature) {
@@ -1570,10 +1783,17 @@ html body .qq1000-tools-row .cj-btn-shu {
                 scheduleApply();
             })
             .catch(() => {
+                if (sessionGeneration !== portalSessionGeneration) return;
                 portalFetchedAt = Date.now();
+                portalSignature = "";
+                renderPortalConfig({ adsByPlacement: {} });
             })
             .then(() => {
                 portalInflight = null;
+                if (portalReloadRequested) {
+                    portalReloadRequested = false;
+                    void loadOnlinePortalConfig(true);
+                }
             });
         return portalInflight;
     }
@@ -1609,6 +1829,21 @@ html body .qq1000-tools-row .cj-btn-shu {
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") loadOnlinePortalConfig(true);
     });
+    function handleAdSessionChange(changes, area) {
+        if ((area !== "sync" && area !== "local") || !changes || !changes["cj-user-token"]) return;
+        portalSessionGeneration++;
+        portalSignature = "";
+        portalFetchedAt = 0;
+        renderPortalConfig({ adsByPlacement: {} });
+        portalReloadRequested = true;
+        if (!portalInflight) {
+            portalReloadRequested = false;
+            void loadOnlinePortalConfig(true);
+        }
+    }
+    try {
+        chrome.storage.onChanged.addListener(handleAdSessionChange);
+    } catch (error) {}
 
     // 注意：这个观察器跑在**所有页面**（含 tu.qq1000.com 这类重 DOM 的 SPA）。
     // 原来每次 DOM 变动都先做 11 次 document.querySelector 全文扫描，页面每秒几百上千次
@@ -1675,7 +1910,7 @@ html body .qq1000-tools-row .cj-btn-shu {
         try {
             ensurePanelTitle();   // 放最前：即使下面的清理抛错，标题也一定被补上
             applyRemovals();
-            applyMovePanelAds(lastAdsByPlacement);
+            renderCurrentAds();
         } catch (error) {
         }
     }, 5000);

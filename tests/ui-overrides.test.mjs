@@ -86,7 +86,7 @@ function portal() {
     let token = "synthetic-first";
     const context = vm.createContext({
         Date, AbortController, setTimeout, clearTimeout, API_HOST: "https://tu.qq1000.com", PORTAL_TTL: 15000, PORTAL_REQUEST_TIMEOUT_MS: 12000,
-        portalInflight: null, portalFetchedAt: 0, portalSignature: "", readUserToken: async () => token,
+        portalInflight: null, portalFetchedAt: 0, portalSignature: "", portalReloadRequested: false, portalSessionGeneration: 0, readUserToken: async () => token,
         fetch: async (url, options) => { requests.push({ url, options }); return network; },
         portalSignatureOf: data => JSON.stringify(data), renderPortalConfig: data => renders.push(data), scheduleApply() {},
     });
@@ -122,9 +122,10 @@ test("a late portal configuration response cannot replace the new account's UI",
 test("changing a move-panel advertisement updates one listener instead of opening old links", () => {
     const urls = [];
     const listeners = [];
-    const entry = { dataset: {}, addEventListener: (_event, listener) => listeners.push(listener) };
+    const entry = { dataset: {}, style: { setProperty() {}, removeProperty() {} }, setAttribute() {}, querySelector: () => null, addEventListener: (_event, listener) => listeners.push(listener) };
     const node = { textContent: "礼品代发", parentElement: entry, dataset: {}, closest: () => entry };
-    const context = vm.createContext({ MOVE_AD_SLOTS: [{ label: "礼品代发", match: /礼品/ }], directLabelNode: () => node, normalizeText: value => value, removeNode() {}, window: { open: url => urls.push(url) }, openLink: url => urls.push(url), ads: { move_panel: [{ title: "礼品代发", linkUrl: "https://example.com/old" }] } });
+    const context = vm.createContext({ API_HOST: "https://tu.qq1000.com", URL, MOVE_AD_SLOTS: [{ label: "礼品代发", match: /礼品/ }], directLabelNode: () => node, normalizeText: value => value, removeNode() {}, window: { open: url => urls.push(url) }, openLink: url => urls.push(url), ads: { move_panel: [{ id: "configured", enabled: true, title: "礼品代发", linkUrl: "https://example.com/old" }] } });
+    for (const name of ["absoluteUrl", "adBoolean", "adTimestamp", "normalizeAd", "adsForPlacement", "applyAdBadge"]) vm.runInContext(fn(name), context);
     vm.runInContext(fn("applyMovePanelAds"), context);
     vm.runInContext("applyMovePanelAds(ads)", context);
     context.ads.move_panel[0].linkUrl = "https://example.com/new";

@@ -13,11 +13,6 @@
   "pluginName": "QQ1000电商",
   "titleName": "QQ1000电商",
   "brandName": "QQ1000电商",
-  "aiAd": {
-    "label": "QQ1000.AI",
-    "url": "https://tu.qq1000.com",
-    "subtitle": "tu.qq1000.com"
-  },
   "guestMode": {
     "enabled": false,
     "unlimited": false,
