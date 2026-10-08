@@ -1,7 +1,7 @@
 {
-  "version": "5.79.2",
-  "updatedAt": "2026-10-08T02:26:38Z",
-  "zipUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/download/v5.79.2/qq1000-chrome-extension.zip",
-  "downloadUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/tag/v5.79.2",
-  "notes": "修复升级通知误显示未登录、账号切换竞态，并避免账号校验命中共享缓存。"
+  "version": "5.80.0",
+  "updatedAt": "2026-10-08T16:10:42Z",
+  "zipUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/download/v5.80.0/qq1000-chrome-extension.zip",
+  "downloadUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/tag/v5.80.0",
+  "notes": "修复登录、数据保存和页面恢复；广告统一由后台配置，无有效配置不显示；移除个人中心功能导航、选品库 AI 推广与教程。更新后请重新加载扩展并刷新业务页面。"
 }

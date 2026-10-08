@@ -32,6 +32,10 @@ jobs:
           import base64, datetime, hashlib, json, os, pathlib
           manifest = json.loads(pathlib.Path("manifest.json").read_text(encoding="utf-8"))
           version = manifest["version"]
+          config_path = pathlib.Path("config/app-config.json")
+          app_config = json.loads(config_path.read_text(encoding="utf-8"))
+          app_config["versions"] = version
+          config_path.write_text(json.dumps(app_config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
           repo = "QQ1000COM/qq1000-chrome-extension"
           previous = json.loads(pathlib.Path("version.json").read_text(encoding="utf-8"))
           payload = {
@@ -57,7 +61,7 @@ jobs:
 
       - name: 打包扩展并生成校验和
         run: |
-          zip -r qq1000-chrome-extension.zip manifest.json config icons rules script source popup.html popup.js version.json updates.xml \
+          zip -r qq1000-chrome-extension.zip manifest.json config icons rules script source popup.html popup.js version.json updates.xml README.md \
             -x '*.bak' -x '*.bak-*'
           sha256sum qq1000-chrome-extension.zip > SHA256SUMS.txt
 
@@ -75,7 +79,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add version.json updates.xml
+          git add version.json updates.xml config/app-config.json
           if ! git diff --cached --quiet; then
             git commit -m "chore: 同步版本元数据到 v${{ steps.version.outputs.version }} [skip ci]"
             git push

@@ -21,25 +21,41 @@ const TOKEN_STORAGE_KEY = "cj-user-token";
 
 let cachedToken = "";
 let cachedTokenAt = 0;
+let tokenGeneration = 0;
+let pendingTokenRead = null;
 
 export function clearUserTokenCache() {
     cachedToken = "";
     cachedTokenAt = 0;
+    tokenGeneration++;
+    pendingTokenRead = null;
 }
 
 export async function getUserToken(force = false) {
     const now = Date.now();
-    if (!force && cachedToken && now - cachedTokenAt < 15000) return cachedToken;
-    let value = "";
-    try {
-        const stored = await chrome.storage.sync.get([TOKEN_STORAGE_KEY]);
-        value = String((stored && stored[TOKEN_STORAGE_KEY]) || "").trim();
-    } catch (error) {
-        value = "";
-    }
-    cachedToken = value;
-    cachedTokenAt = now;
-    return value;
+    if (!force && cachedTokenAt && now - cachedTokenAt < 15000) return cachedToken;
+    if (pendingTokenRead) return pendingTokenRead.promise;
+    const read = { generation: tokenGeneration, promise: null };
+    read.promise = (async () => {
+        let value = "";
+        // Keep the effective account consistent with popup.js and the portal bridge.
+        for (const area of ["sync", "local"]) {
+            try {
+                const stored = await chrome.storage[area].get([TOKEN_STORAGE_KEY]);
+                value = String((stored && stored[TOKEN_STORAGE_KEY]) || "").trim();
+            } catch (error) {}
+            if (value) break;
+        }
+        // An older storage read may finish after onChanged invalidates its account.
+        if (read.generation !== tokenGeneration) return getUserToken(force);
+        cachedToken = value;
+        cachedTokenAt = Date.now();
+        return value;
+    })().finally(() => {
+        if (pendingTokenRead === read) pendingTokenRead = null;
+    });
+    pendingTokenRead = read;
+    return read.promise;
 }
 
 export function apiHost() {
@@ -72,7 +88,7 @@ try {
     self.fetch = async function qq1000Fetch(input, init) {
         let url = "";
         try {
-            url = typeof input === "string" ? input : (input && input.url) || "";
+            url = typeof input === "string" ? input : input instanceof URL ? input.href : (input && input.url) || "";
         } catch (error) {
             url = "";
         }
@@ -101,8 +117,8 @@ try {
         return response;
     };
 
-    chrome.storage.onChanged.addListener((changes) => {
-        if (changes && changes[TOKEN_STORAGE_KEY]) clearUserTokenCache();
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if ((area === "sync" || area === "local") && changes && changes[TOKEN_STORAGE_KEY]) clearUserTokenCache();
     });
 } catch (error) {
     // 包不住也不能让 service worker 起不来：退化成原生 fetch。
