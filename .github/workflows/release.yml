@@ -61,7 +61,7 @@ jobs:
 
       - name: 打包扩展并生成校验和
         run: |
-          zip -r qq1000-chrome-extension.zip manifest.json config icons rules script source popup.html popup.js version.json updates.xml \
+          zip -r qq1000-chrome-extension.zip manifest.json config icons rules script source popup.html popup.js version.json updates.xml README.md \
             -x '*.bak' -x '*.bak-*'
           sha256sum qq1000-chrome-extension.zip > SHA256SUMS.txt
 
