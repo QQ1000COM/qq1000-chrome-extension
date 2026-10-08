@@ -22,8 +22,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 安全回归检查
-        run: node --test tests/security.test.mjs
+      - name: 插件回归检查
+        run: node --test tests/*.test.mjs
 
       - name: 准备版本元数据
         id: version

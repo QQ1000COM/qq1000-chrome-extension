@@ -177,7 +177,8 @@ async function loadUser() {
         showPanel(false);
         return;
     }
-    const payload = await apiRequest("/plugin/api/user/info", { token });
+    // 账号资料由服务端实时校验；POST 避开按 URL 共享缓存的旧 GET 响应。
+    const payload = await apiRequest("/plugin/api/user/info", { token, method: "POST" });
     if (!payload || payload.state === false || UNAUTHORIZED_CODES.has(Number(payload.code))) {
         if (payload && UNAUTHORIZED_CODES.has(Number(payload.code))) {
             await clearStoredSession();

@@ -24,11 +24,17 @@
     const BANNER_ID = "qq1000-portal-login-banner";
     const API_HOST = "https://tu.qq1000.com";
     const PROFILE_URL = `${API_HOST}/profile`;
+    const UPDATE_DOWNLOAD_URL = "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/latest";
     const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
     const UNAUTHORIZED_CODES = new Set([101, 102, 401]);
 
     let token = "";
     let banner = null;
+    let loginNotice = "";
+    let updateNotice = "";
+    let loginRefreshId = 0;
+    let loginRefreshPending = false;
+    let reloadTimer = null;
     let heartbeatTimer = null;
     let lastHeartbeatAt = 0;
 
@@ -92,6 +98,7 @@
  box-shadow:0 8px 28px rgba(16,24,40,.14);}
 #${BANNER_ID} .qq1000-pb-title{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;}
 #${BANNER_ID} .qq1000-pb-dot{width:8px;height:8px;border-radius:50%;background:#f04438;flex:0 0 8px;}
+#${BANNER_ID}[data-mode="update"] .qq1000-pb-dot{background:#f79009;}
 #${BANNER_ID} .qq1000-pb-text{margin-top:6px;color:#667085;font-size:12px;}
 #${BANNER_ID} .qq1000-pb-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
 #${BANNER_ID} button,#${BANNER_ID} a{cursor:pointer;border-radius:8px;font-size:12px;padding:6px 10px;
@@ -103,38 +110,71 @@
         (document.head || document.documentElement).appendChild(style);
     }
 
-    function hideBanner() {
+    function hideLoginBanner() {
+        loginNotice = "";
+        renderBanner();
+    }
+
+    function removeBanner() {
         if (banner && banner.parentElement) banner.parentElement.removeChild(banner);
         banner = null;
     }
 
-    function showBanner(reason) {
+    function showLoginBanner(reason) {
+        loginNotice = reason;
+        renderBanner();
+    }
+
+    function showUpdateBanner(reason) {
+        updateNotice = reason;
+        renderBanner();
+    }
+
+    function renderBanner() {
+        // 更新通知与登录状态分别保存，版本检查不能覆盖真正的失效原因。
+        const mode = loginNotice ? "login" : "update";
+        const reason = loginNotice || updateNotice;
+        if (!reason) {
+            removeBanner();
+            return;
+        }
         if (!document.body && !document.documentElement) return;
         ensureBannerStyle();
-        if (banner && banner.parentElement) {
+        if (banner && banner.parentElement && banner.dataset.mode === mode) {
             const text = banner.querySelector(".qq1000-pb-text");
             if (text) text.textContent = reason;
             return;
         }
+        removeBanner();
         const node = document.createElement("div");
         node.id = BANNER_ID;
+        node.dataset.mode = mode;
         node.innerHTML = `
-<span class="qq1000-pb-title"><span class="qq1000-pb-dot"></span>未登录 · 插件功能已停用</span>
+<span class="qq1000-pb-title"><span class="qq1000-pb-dot"></span><span class="qq1000-pb-title-text"></span></span>
 <div class="qq1000-pb-text"></div>
-<div class="qq1000-pb-actions">
-    <button type="button" class="qq1000-pb-primary">用密钥登录</button>
-    <a href="${PROFILE_URL}" target="_blank" rel="noopener noreferrer">去用户中心复制密钥</a>
-</div>
+<div class="qq1000-pb-actions"></div>
 <button type="button" class="qq1000-pb-close" aria-label="关闭">×</button>`;
+        node.querySelector(".qq1000-pb-title-text").textContent = mode === "login"
+            ? "未登录 · 插件功能已停用" : "插件有新版本";
+        const actions = node.querySelector(".qq1000-pb-actions");
+        if (mode === "login") {
+            actions.innerHTML = `
+    <button type="button" class="qq1000-pb-primary">用密钥登录</button>
+    <a href="${PROFILE_URL}" target="_blank" rel="noopener noreferrer">去用户中心复制密钥</a>`;
+            node.querySelector(".qq1000-pb-primary").addEventListener("click", event => {
+                event.preventDefault();
+                openPopupPage();
+            });
+        } else {
+            actions.innerHTML = `<a href="${UPDATE_DOWNLOAD_URL}" target="_blank" rel="noopener noreferrer">下载新版本</a>`;
+        }
         const text = node.querySelector(".qq1000-pb-text");
         if (text) text.textContent = reason;
-        node.querySelector(".qq1000-pb-primary").addEventListener("click", event => {
-            event.preventDefault();
-            openPopupPage();
-        });
         node.querySelector(".qq1000-pb-close").addEventListener("click", event => {
             event.preventDefault();
-            hideBanner();
+            if (mode === "login") loginNotice = "";
+            else updateNotice = "";
+            renderBanner();
         });
         (document.body || document.documentElement).appendChild(node);
         banner = node;
@@ -171,32 +211,49 @@
     }
 
     async function heartbeat(force = false) {
-        if (!token) return;
+        if (!token || loginRefreshPending) return;
         const now = Date.now();
         if (!force && now - lastHeartbeatAt < 60000) return;
         lastHeartbeatAt = now;
         const checkedToken = token;
-        const payload = await requestJson("/plugin/api/user/info");
-        if (token !== checkedToken) return;
+        const checkedRefreshId = loginRefreshId;
+        // POST 由现有接口支持，避免 CDN 复用其他账号的 GET 校验结果。
+        const payload = await requestJson("/plugin/api/user/info", { method: "POST" });
+        // 存储变更已到达但异步回读尚未完成时，旧请求也不能清除新账号。
+        if (token !== checkedToken || checkedRefreshId !== loginRefreshId) return;
         if (!payload) return;
         if (UNAUTHORIZED_CODES.has(Number(payload.code))) {
             await clearSession();
-            showBanner(String(payload.msg || "登录已失效，请重新使用用户密钥登录"));
+            showLoginBanner(String(payload.msg || "登录已失效，请重新使用用户密钥登录"));
         }
     }
 
-    async function refreshLoginState() {
+    async function refreshLoginState(reloadOnChange = false) {
+        const refreshId = ++loginRefreshId;
+        loginRefreshPending = true;
         const stored = await storageGet("sync", [TOKEN_KEY]);
-        token = String((stored && stored[TOKEN_KEY]) || "").trim();
-        if (!token) {
+        let next = String((stored && stored[TOKEN_KEY]) || "").trim();
+        if (!next) {
             const local = await storageGet("local", [TOKEN_KEY]);
-            token = String((local && local[TOKEN_KEY]) || "").trim();
+            next = String((local && local[TOKEN_KEY]) || "").trim();
         }
+        if (refreshId !== loginRefreshId) return;
+        loginRefreshPending = false;
+        const previous = token;
+        token = next;
         if (!token) {
-            showBanner("插件已改为在线登录：请在插件图标里粘贴 tu.qq1000.com 用户中心的用户密钥。");
+            if (reloadTimer) clearTimeout(reloadTimer);
+            reloadTimer = null;
+            showLoginBanner("插件已改为在线登录：请在插件图标里粘贴 tu.qq1000.com 用户中心的用户密钥。");
             return;
         }
-        hideBanner();
+        hideLoginBanner();
+        if (reloadOnChange && token !== previous && !reloadTimer) {
+            // 两个存储区会分别发事件，只按实际生效的密钥变化刷新一次。
+            reloadTimer = setTimeout(() => {
+                try { window.location.reload(); } catch (error) {}
+            }, 300);
+        }
         await heartbeat(true);
     }
 
@@ -295,18 +352,8 @@
     try {
         chrome.storage.onChanged.addListener((changes, area) => {
             if ((area !== "sync" && area !== "local") || !changes || !changes[TOKEN_KEY]) return;
-            const next = String((changes[TOKEN_KEY].newValue) || "").trim();
-            const previous = token;
-            token = next;
-            if (next && !previous) {
-                hideBanner();
-                // 刚登录：刷新一次让面板按新身份重新拉取脚本与次数。
-                setTimeout(() => {
-                    try { window.location.reload(); } catch (error) {}
-                }, 300);
-            } else if (!next) {
-                showBanner("已退出登录，插件功能已停用。");
-            }
+            // sync 优先、local 兜底，与 popup 一致；不能把删除任一副本当成退出。
+            void refreshLoginState(true);
         });
     } catch (error) {}
 
@@ -370,7 +417,7 @@
                         return;
                     }
                     if (!isNewerVersion(payload.version, currentVersion)) return;
-                    showBanner("插件有新版本 v" + payload.version + "（当前 v" + currentVersion + "），请更新");
+                    showUpdateBanner("插件有新版本 v" + payload.version + "（当前 v" + currentVersion + "），请下载后在扩展管理页重新加载。");
                 })
                 .catch(() => attempt(index + 1));
         };
