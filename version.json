@@ -1,7 +1,7 @@
 {
-  "version": "5.80.1",
-  "updatedAt": "2026-10-23T15:15:00Z",
-  "zipUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/download/v5.80.1/qq1000-chrome-extension.zip",
-  "downloadUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/tag/v5.80.1",
-  "notes": "登录弹窗改为只填 tu.qq1000.com 用户密钥：移除密码框、记住我和注册入口，不再出现账号密码登录。更新后请重新加载扩展并刷新业务页面。"
+  "version": "5.80.2",
+  "updatedAt": "2026-10-23T15:50:00Z",
+  "zipUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/download/v5.80.2/qq1000-chrome-extension.zip",
+  "downloadUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/tag/v5.80.2",
+  "notes": "登录弹窗只保留 tu.qq1000.com 用户密钥：密码框、记住我、注册和忘记密码入口全部删除（后端没有账号密码体系）。更新后请重新加载扩展并刷新业务页面。"
 }

@@ -12,8 +12,8 @@
  *      没有就显示「未登录」浮条，引导用户到插件弹窗里粘贴密钥；
  *   2. 定期拿密钥向服务端做心跳校验，服务端回 101/102 就立刻清掉本地登录态
  *      并重新提示登录（密钥被停用 / 次数被封时插件立即失效）；
- *   3. 把插件自带登录弹窗改成只填「用户密钥」：隐藏密码框、记住我、
- *      注册/忘记密码入口，避免用户以为还要输账号密码。
+ *   3. 把插件自带登录弹窗改成只填「用户密钥」：直接删除密码框、记住我、
+ *      注册/忘记密码入口（后端没有账号密码体系），避免用户以为还要输账号密码。
  *
  * 它不做任何本地放行、不伪造任何响应：能不能用只由服务端说了算。
  */
@@ -273,14 +273,12 @@
         ".cj-wg-overlay",
         ".plugin-wrapper"
     ];
-    // 密码框隐藏后仍要带上一个值，随便什么内容都行（服务端只认账号那一栏的密钥）
-    const KEY_PLACEHOLDER_VALUE = "qq1000-key";
     const KEY_ONLY_HINT_ID = "qq1000-key-only-hint";
 
-    function hideLoginNode(node) {
+    function removeLoginNode(node) {
         if (!node) return;
-        if (node.style) node.style.display = "none";
-        try { node.setAttribute("aria-hidden", "true"); } catch (error) {}
+        if (node.parentElement) node.remove();
+        else if (node.style) node.style.display = "none";
     }
 
     function loginRowFor(input) {
@@ -301,22 +299,15 @@
 
     function hidePasswordLogin(scope, keyInput) {
         scope.querySelectorAll('input[type="password"]').forEach(password => {
-            if (!password || password.dataset.qq1000KeyHint === "1") return;
-            password.dataset.qq1000KeyHint = "1";
-            password.setAttribute("autocomplete", "new-password");
-            // 密码框整行隐藏；仍写入占位值，兼容旧版弹窗提交 username+pwd 两个字段
-            // 的逻辑（服务端只认 username 里的用户密钥）。
-            hideLoginNode(loginRowFor(password));
-            hideLoginNode(password);
-            if (password.value !== KEY_PLACEHOLDER_VALUE) {
-                password.value = KEY_PLACEHOLDER_VALUE;
-                password.dispatchEvent(new Event("input", { bubbles: true }));
-                password.dispatchEvent(new Event("change", { bubbles: true }));
-            }
+            if (!password) return;
+            // 后端没有账号密码体系：密码框整行直接删除，不隐藏、不留占位值。
+            // 插件登录请求本来就把用户密钥同时填进 username 字段，删除密码框不影响提交。
+            removeLoginNode(loginRowFor(password));
+            removeLoginNode(password);
         });
-        // 记住我 / 忘记密码 / 注册入口本站都不提供。
-        hideLoginNode(scope.querySelector(".lm2-form-meta"));
-        hideLoginNode(scope.querySelector(".lm2-remember"));
+        // 记住我 / 忘记密码 / 注册入口本站都不提供，直接删除。
+        removeLoginNode(scope.querySelector(".lm2-form-meta"));
+        removeLoginNode(scope.querySelector(".lm2-remember"));
         [".lm2-register-row", ".lm2-forgot", ".lm2-forgot-password"].forEach(className => {
             scope.querySelectorAll(className).forEach(node => {
                 if (node.parentElement) node.remove();
