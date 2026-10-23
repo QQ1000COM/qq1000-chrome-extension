@@ -21,6 +21,16 @@
     if (window.__QQ1000_PORTAL_BRIDGE__) return;
     window.__QQ1000_PORTAL_BRIDGE__ = true;
 
+    // 只允许官方扩展 ID 运行登录桥。被改包/仿制的扩展会得到不同 ID，
+    // 即使复制了这段脚本也不会继续注入登录态与密钥。
+    const OFFICIAL_EXTENSION_ID = "bhbcmenfnonhmcobednnhidmkgfhhfjf";
+    try {
+        if (chrome.runtime && chrome.runtime.id && chrome.runtime.id !== OFFICIAL_EXTENSION_ID) {
+            console.error("[QQ1000] 非官方扩展 ID，登录桥已停用");
+            return;
+        }
+    } catch (error) {}
+
     const TOKEN_KEY = "cj-user-token";
     const BANNER_ID = "qq1000-portal-login-banner";
     const API_HOST = "https://tu.qq1000.com";
