@@ -12,7 +12,8 @@
  *      没有就显示「未登录」浮条，引导用户到插件弹窗里粘贴密钥；
  *   2. 定期拿密钥向服务端做心跳校验，服务端回 101/102 就立刻清掉本地登录态
  *      并重新提示登录（密钥被停用 / 次数被封时插件立即失效）；
- *   3. 把插件自带登录弹窗的字段提示改成「用户密钥」，避免用户去输账号密码。
+ *   3. 把插件自带登录弹窗改成只填「用户密钥」：隐藏密码框、记住我、
+ *      注册/忘记密码入口，避免用户以为还要输账号密码。
  *
  * 它不做任何本地放行、不伪造任何响应：能不能用只由服务端说了算。
  */
@@ -259,8 +260,8 @@
         await heartbeat(true);
     }
 
-    /* 插件自带登录弹窗的字段提示改成「用户密钥」 */
-    const ACCOUNT_PLACEHOLDER = /手机号\s*\/\s*邮箱|手机号|邮箱|账号/;
+    /* 插件自带登录弹窗改成「只用用户密钥」 */
+    const ACCOUNT_PLACEHOLDER = /手机号\s*\/\s*邮箱|手机号|邮箱|账号|用户密钥/;
     // 只在插件自己的弹窗里改文案。以前是全文档扫 input[placeholder]，
     // 结果淘宝/京东等站点**自己的**登录框也被改成「用户密钥」，用户根本没法登录 ——
     // 这些容器类名是插件独有的，宿主页面不会有。
@@ -274,6 +275,64 @@
     ];
     // 密码框隐藏后仍要带上一个值，随便什么内容都行（服务端只认账号那一栏的密钥）
     const KEY_PLACEHOLDER_VALUE = "qq1000-key";
+    const KEY_ONLY_HINT_ID = "qq1000-key-only-hint";
+
+    function hideLoginNode(node) {
+        if (!node) return;
+        if (node.style) node.style.display = "none";
+        try { node.setAttribute("aria-hidden", "true"); } catch (error) {}
+    }
+
+    function loginRowFor(input) {
+        return input.closest(".kdcm-input-row") ||
+            input.closest(".lm2-input-row") ||
+            input.closest(".form-row") ||
+            input.parentElement;
+    }
+
+    function markKeyOnlyInput(input) {
+        if (!input || input.dataset.qq1000KeyHint === "1") return;
+        input.dataset.qq1000KeyHint = "1";
+        input.setAttribute("placeholder", "用户密钥（在 tu.qq1000.com 用户中心复制）");
+        // 避免浏览器把密钥当账号密码保存/自动填充。
+        input.setAttribute("autocomplete", "off");
+        input.setAttribute("name", "qq1000-user-key");
+    }
+
+    function hidePasswordLogin(scope, keyInput) {
+        scope.querySelectorAll('input[type="password"]').forEach(password => {
+            if (!password || password.dataset.qq1000KeyHint === "1") return;
+            password.dataset.qq1000KeyHint = "1";
+            password.setAttribute("autocomplete", "new-password");
+            // 密码框整行隐藏；仍写入占位值，兼容旧版弹窗提交 username+pwd 两个字段
+            // 的逻辑（服务端只认 username 里的用户密钥）。
+            hideLoginNode(loginRowFor(password));
+            hideLoginNode(password);
+            if (password.value !== KEY_PLACEHOLDER_VALUE) {
+                password.value = KEY_PLACEHOLDER_VALUE;
+                password.dispatchEvent(new Event("input", { bubbles: true }));
+                password.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+        });
+        // 记住我 / 忘记密码 / 注册入口本站都不提供。
+        hideLoginNode(scope.querySelector(".lm2-form-meta"));
+        hideLoginNode(scope.querySelector(".lm2-remember"));
+        [".lm2-register-row", ".lm2-forgot", ".lm2-forgot-password"].forEach(className => {
+            scope.querySelectorAll(className).forEach(node => {
+                if (node.parentElement) node.remove();
+            });
+        });
+        if (!keyInput) return;
+        const row = loginRowFor(keyInput);
+        const host = row && row.parentElement;
+        if (!host || host.querySelector(`#${KEY_ONLY_HINT_ID}`)) return;
+        const hint = document.createElement("div");
+        hint.id = KEY_ONLY_HINT_ID;
+        hint.textContent = "本站仅支持用户密钥登录，无需密码";
+        hint.style.cssText = "margin:-16px 0 18px;color:#8a94a6;font-size:12px;line-height:1.5;";
+        if (row.nextSibling) host.insertBefore(hint, row.nextSibling);
+        else host.appendChild(hint);
+    }
 
     function relabelLoginDialogInputs() {
         LOGIN_SCOPE_SELECTORS.forEach(selector => {
@@ -284,38 +343,29 @@
                 return;
             }
             scopes.forEach(scope => {
-                const inputs = scope.querySelectorAll("input[placeholder]");
-                inputs.forEach(input => {
+                const inputList = Array.from(scope.querySelectorAll("input") || []);
+                let keyInput = null;
+                inputList.forEach(input => {
+                    if (!input || String(input.getAttribute("type") || "").toLowerCase() === "password") return;
                     const placeholder = String(input.getAttribute("placeholder") || "");
-                    if (!ACCOUNT_PLACEHOLDER.test(placeholder)) return;
-                    if (input.dataset.qq1000KeyHint === "1") return;
-                    input.dataset.qq1000KeyHint = "1";
-                    input.setAttribute("placeholder", "用户密钥（在 tu.qq1000.com 用户中心复制）");
-                    // 密码框必须取自同一个弹窗，不能再去全文档抓第一个 password 输入框。
-                    // 本站只支持密钥登录：密码那一行直接隐藏，并自动填一个占位值 ——
-                    // 插件客户端提交时会带上账号+密码两个字段，删掉会导致登录请求缺字段。
-                    const password = scope.querySelector('input[type="password"]');
-                    if (password) {
-                        if (!password.dataset.qq1000KeyHint) {
-                            password.dataset.qq1000KeyHint = "1";
-                            password.setAttribute("placeholder", "密钥已填在上一栏，这里随便填");
-                        }
-                        const row = password.closest(".kdcm-input-row") ||
-                            password.closest(".lm2-input-row") || password.parentElement;
-                        if (row && row.style.display !== "none") row.style.display = "none";
-                        if (password.value !== KEY_PLACEHOLDER_VALUE) {
-                            password.value = KEY_PLACEHOLDER_VALUE;
-                            password.dispatchEvent(new Event("input", { bubbles: true }));
-                            password.dispatchEvent(new Event("change", { bubbles: true }));
-                        }
+                    if (ACCOUNT_PLACEHOLDER.test(placeholder)) {
+                        markKeyOnlyInput(input);
+                        keyInput = keyInput || input;
                     }
                 });
-            });
-        });
-        // 注册 / 忘记密码这些入口本站不提供，直接摘掉
-        [".lm2-register-row", ".lm2-forgot", ".lm2-forgot-password"].forEach(className => {
-            document.querySelectorAll(className).forEach(node => {
-                if (node.parentElement) node.remove();
+                // 旧版弹窗可能没有 placeholder，只在明确的插件登录容器里按类名兜底。
+                if (!keyInput && (selector === "#loginApp-gg" || selector === ".lm2-form-panel" || selector === ".lm2-view")) {
+                    keyInput = inputList.find(input => {
+                        if (!input || String(input.getAttribute("type") || "").toLowerCase() === "password") return false;
+                        const className = String(input.className || "");
+                        return /(?:^|\s)(?:lm2-input|kdcm-input)(?:\s|$)/.test(className);
+                    }) || null;
+                    if (keyInput) markKeyOnlyInput(keyInput);
+                }
+                // 没有识别到密钥输入框的 scope（例如宿主站点自己的登录框）一律不碰，
+                // 否则会把淘宝/京东的密码框也隐藏掉。
+                if (!keyInput) return;
+                hidePasswordLogin(scope, keyInput);
             });
         });
     }
