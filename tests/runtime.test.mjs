@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { isAuthenticatedApiUrl } from "../script/qq1000_security_policy.mjs";
 
 const workerSource = fs.readFileSync(new URL("../script/service_worker_new.js", import.meta.url), "utf8");
 const TOKEN_KEY = "cj-user-token";
@@ -260,6 +261,7 @@ test("authenticated proxy requests use the same effective account as static asse
     let options;
     const context = workerSection("async function handleProxyApiRequest(", "const HEADER_PREFIX", {
         getUserToken: async () => "current-synthetic",
+        isAuthenticatedApiUrl,
         chrome: { storage: { local: { get: (_, callback) => callback({ "cj-user-token": "stale-fallback" }) } } },
         fetch: async (_, init) => {
             options = init;

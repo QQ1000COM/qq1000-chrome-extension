@@ -1,7 +1,7 @@
 {
-  "version": "5.80.3",
-  "updatedAt": "2026-10-24T00:25:00Z",
-  "zipUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/download/v5.80.3/qq1000-chrome-extension.zip",
-  "downloadUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/tag/v5.80.3",
-  "notes": "安全加固：后台服务与登录桥只允许官方扩展 ID 运行，收紧 web_accessible_resources 到电商站点，移除未使用的调试权限；登录弹窗只保留用户密钥。更新后请重新加载扩展并刷新业务页面。"
+  "version": "5.80.4",
+  "updatedAt": "2026-10-24T00:35:00Z",
+  "zipUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/download/v5.80.4/qq1000-chrome-extension.zip",
+  "downloadUrl": "https://github.com/QQ1000COM/qq1000-chrome-extension/releases/tag/v5.80.4",
+  "notes": "安全加固：官方扩展 ID 校验、认证请求只允许发往 QQ1000 插件 API、收紧可访问资源并移除调试权限；登录弹窗只保留用户密钥。"
 }
